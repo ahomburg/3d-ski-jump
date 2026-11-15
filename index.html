@@ -1,0 +1,2437 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eddie the Eagle — Ski Jump</title>
+<style>
+  :root {
+    --panel: rgba(8, 18, 32, 0.62);
+    --accent: #ffd166;
+    --good: #7dffa0;
+    --warn: #ffb54d;
+    --bad: #ff6b6b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #eef4fb; user-select: none; }
+  canvas { display: block; }
+
+  .hud { position: fixed; z-index: 5; pointer-events: none; }
+
+  #speedPanel { top: 18px; left: 18px; background: var(--panel); border-radius: 12px; padding: 10px 16px; min-width: 150px; }
+  #speedPanel .label, .label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.75; }
+  #speed { font-size: 34px; font-weight: 700; line-height: 1.05; letter-spacing: 1px; }
+  #speedPanel .unit { font-size: 13px; opacity: 0.8; font-weight: 400; }
+  #flightInfo { font-size: 12px; opacity: 0.85; margin-top: 3px; }
+
+  #windPanel { top: 18px; right: 18px; background: var(--panel); border-radius: 12px; padding: 10px 16px; text-align: right; min-width: 130px; }
+  #windArrow { display: inline-block; font-size: 22px; font-weight: 700; }
+  #windSpeed { font-size: 14px; opacity: 0.9; }
+
+  #liveDist { top: 16px; left: 50%; transform: translateX(-50%); text-align: center; background: var(--panel); border-radius: 12px; padding: 8px 22px; display: none; }
+  #liveDist .val { font-size: 30px; font-weight: 700; }
+  #liveDist .label { display: block; }
+
+  #hint { bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; letter-spacing: 1.5px; background: var(--panel); border-radius: 999px; padding: 9px 22px; display: none; }
+
+  /* Timing bar (in-run) */
+  #timing { bottom: 46px; left: 50%; transform: translateX(-50%); width: 340px; display: none; }
+  #timing .label { text-align: center; margin-bottom: 7px; font-size: 12px; letter-spacing: 2px; }
+  #timingBar { position: relative; height: 18px; background: rgba(8, 18, 32, 0.7); border: 1px solid rgba(255,255,255,0.35); border-radius: 999px; overflow: hidden; }
+  #timingZone { position: absolute; top: 0; bottom: 0; background: rgba(125, 255, 160, 0.55); border-left: 2px solid var(--good); border-right: 2px solid var(--good); }
+  #timingMarker { position: absolute; top: -3px; width: 4px; height: 24px; background: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.8); }
+
+  /* Attitude indicator (flight) */
+  #attitude { bottom: 40px; left: 50%; transform: translateX(-50%); width: 170px; text-align: center; display: none; }
+  #attInner { position: relative; width: 130px; height: 130px; margin: 0 auto; border-radius: 50%; border: 2px solid rgba(255,255,255,0.55); background: rgba(8, 18, 32, 0.55); overflow: hidden; }
+  #horizon { position: absolute; left: -20%; width: 140%; top: 50%; height: 0; border-top: 3px solid var(--good); box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+  #crosshairMark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  #attText { font-size: 12px; letter-spacing: 1.5px; margin-top: 7px; text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
+
+  #cross { top: 50%; left: 50%; transform: translate(-50%,-50%); width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.75); display: none; }
+
+  /* Flash messages */
+  #flash { top: 26%; left: 50%; transform: translateX(-50%); text-align: center; width: 100%; }
+  .flashMsg { font-size: 44px; font-weight: 800; letter-spacing: 3px; text-shadow: 0 3px 14px rgba(0,0,0,0.7); margin: 4px 0; opacity: 0; animation: flashIn 1.9s ease forwards; }
+  @keyframes flashIn { 0% { opacity: 0; transform: scale(0.8); } 12% { opacity: 1; transform: scale(1.06); } 22% { transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* Vignette */
+  #vignette { inset: 0; box-shadow: inset 0 0 180px 60px rgba(120, 10, 10, 0); transition: box-shadow 0.25s; }
+
+  /* Overlays */
+  .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(4, 10, 20, 0.55); backdrop-filter: blur(5px); }
+  .card { background: linear-gradient(160deg, rgba(14, 28, 48, 0.94), rgba(10, 20, 36, 0.94)); border: 1px solid rgba(150, 200, 255, 0.25); border-radius: 20px; padding: 38px 52px; text-align: center; max-width: 560px; box-shadow: 0 22px 70px rgba(0,0,0,0.55); }
+  .card h1 { font-size: 42px; letter-spacing: 8px; margin-bottom: 4px; }
+  .card h1 .accent { color: var(--accent); }
+  .card h2 { font-size: 15px; font-weight: 400; opacity: 0.75; letter-spacing: 3px; margin-bottom: 26px; }
+  .controls { text-align: left; font-size: 14.5px; line-height: 2.05; margin: 0 auto 24px; display: inline-block; }
+  .controls b { display: inline-block; min-width: 128px; color: var(--accent); font-weight: 600; }
+  .bigKey { font-size: 17px; letter-spacing: 2px; }
+  .go { font-size: 19px; letter-spacing: 3px; color: var(--accent); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  /* Hauptmenü */
+  #menu { margin: 4px 0 6px; }
+  .menuItem { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; padding: 13px 18px; margin: 9px 0; text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
+  .menuItem.selected, .menuItem:hover { background: rgba(255, 209, 102, 0.12); border-color: rgba(255, 209, 102, 0.6); }
+  .menuItem .miTitle { font-size: 20px; font-weight: 700; letter-spacing: 3px; }
+  .menuItem .miDesc { font-size: 13px; opacity: 0.75; margin-top: 3px; letter-spacing: 0.5px; }
+  .menuNote { font-size: 12px; opacity: 0.6; margin: 16px 0 20px; letter-spacing: 1.5px; }
+
+  #resultCard .dist { font-size: 58px; font-weight: 800; letter-spacing: 1px; }
+  #resultCard .dist span { font-size: 20px; font-weight: 400; opacity: 0.8; }
+  #resultCard .verdict { font-size: 18px; letter-spacing: 3px; margin: 4px 0 18px; }
+  .statTable { width: 100%; margin: 0 auto 20px; border-collapse: collapse; font-size: 15px; }
+  .statTable td { padding: 6px 14px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .statTable td:last-child { text-align: right; font-weight: 600; }
+  .statTotal { font-size: 22px; font-weight: 700; color: var(--accent); }
+  /* Wettkampf: Springer-Anmeldung */
+  #compPlayerList { list-style: none; margin: 2px 0 12px; font-size: 16px; letter-spacing: 1px; line-height: 1.9; }
+  #compNameInput { display: block; width: 270px; margin: 0 auto 4px; padding: 10px 14px; font: inherit; font-size: 19px; letter-spacing: 1.5px; text-align: center; color: #eef4fb; background: rgba(8, 18, 32, 0.7); border: 1px solid rgba(150, 200, 255, 0.4); border-radius: 10px; outline: none; }
+  #compNameInput:focus { border-color: var(--accent); }
+  #compError { color: var(--bad); font-size: 13px; letter-spacing: 1px; min-height: 17px; margin-bottom: 4px; }
+
+  /* Wettkampf: Zwischenstand (rechts unten) */
+  #compStandings { bottom: 18px; right: 18px; background: var(--panel); border-radius: 12px; padding: 10px 14px; min-width: 205px; }
+  #compStandings .label { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.75; margin-bottom: 4px; }
+  #compStandings table { border-collapse: collapse; font-size: 13px; letter-spacing: 0.5px; }
+  #compStandings td { padding: 2.5px 8px 2.5px 0; }
+  #compStandings td:last-child { text-align: right; font-weight: 600; }
+  #compStandings tr.cur td { color: var(--accent); font-weight: 700; }
+  #compStandings tr.pending td:last-child { opacity: 0.45; font-weight: 400; }
+
+  /* Wettkampf: Rangliste im „Wer ist dran"-Overlay */
+  #nextStandings { margin: 16px auto 10px; border-collapse: collapse; font-size: 15px; }
+  #nextStandings td { padding: 4px 14px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; }
+  #nextStandings td:last-child { text-align: right; font-weight: 600; }
+  #nextStandings tr.cur td { color: var(--accent); font-weight: 700; }
+
+  /* Vierschanzen-Tournee: Schanzen-Trailer (Kamerafahrt) */
+  #trailerOverlay { background: linear-gradient(to top, rgba(4,10,20,0.85) 0%, rgba(4,10,20,0.28) 40%, rgba(4,10,20,0) 62%); backdrop-filter: none; }
+  #trailerOverlay .tInfo { position: absolute; left: 46px; bottom: 44px; text-align: left; max-width: 560px; }
+  #trailerOverlay .tInfo .label { margin-bottom: 6px; text-shadow: 0 2px 10px rgba(0,0,0,0.85); }
+  #trailerOverlay .tInfo h1 { font-size: 40px; margin-bottom: 6px; text-shadow: 0 3px 16px rgba(0,0,0,0.85); }
+  #trailerOverlay .tDesc { font-size: 15px; opacity: 0.92; letter-spacing: 0.5px; text-shadow: 0 2px 8px rgba(0,0,0,0.85); }
+  #trailerOverlay .tWinners { font-size: 13px; opacity: 0.85; margin-top: 9px; letter-spacing: 1px; text-shadow: 0 2px 8px rgba(0,0,0,0.85); }
+  #trStandingsBox { position: absolute; right: 24px; top: 90px; background: var(--panel); border-radius: 12px; padding: 12px 18px; text-align: left; min-width: 215px; }
+  #trStandings { border-collapse: collapse; font-size: 13.5px; letter-spacing: 0.5px; }
+  #trStandings td { padding: 3px 8px 3px 0; }
+  #trStandings td:last-child { text-align: right; font-weight: 600; }
+  #trHint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); text-shadow: 0 2px 8px rgba(0,0,0,0.85); }
+
+  /* Vierschanzen-Tournee: Gesamtwertungs-Tabelle */
+  #podiumCard .compRanking.tourTable td { padding: 6px 9px; font-size: 13.5px; }
+
+  /* Wettkampf: Siegerehrung mit Podest */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; margin: 20px 0 18px; }
+  .pcol { width: 150px; }
+  .pName { font-size: 15px; font-weight: 700; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pPts { font-size: 12.5px; opacity: 0.85; margin: 2px 0 8px; }
+  .pBlock { margin: 0 auto; width: 74px; border-radius: 8px 8px 0 0; font-size: 30px; font-weight: 800; color: #0a1420; display: flex; justify-content: center; padding-top: 8px; }
+  .pBlock.gold { background: linear-gradient(180deg, #ffe08a, #ffd166); }
+  .pBlock.silver { background: linear-gradient(180deg, #d8e0ea, #b7c3cf); }
+  .pBlock.bronze { background: linear-gradient(180deg, #dda171, #c98850); }
+  .pBlock.dim { background: rgba(150, 200, 255, 0.07); }
+
+  #loadError { display: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+
+<div class="hud" id="speedPanel">
+  <div class="label">Geschwindigkeit</div>
+  <div><span id="speed">0</span> <span class="unit">km/h</span></div>
+  <div id="flightInfo"></div>
+</div>
+
+<div class="hud" id="windPanel">
+  <div class="label">Seitenwind</div>
+  <div><span id="windArrow">&#8596;</span> <span id="windSpeed">0.0 m/s</span></div>
+</div>
+
+<div class="hud" id="compStandings" style="display:none">
+  <div class="label">Zwischenstand</div>
+  <table id="compStandingsTable"></table>
+</div>
+
+<div class="hud" id="liveDist">
+  <span class="val" id="liveDistVal">0 m</span>
+  <span class="label">Weite</span>
+</div>
+
+<div class="hud" id="hint">hint</div>
+
+<div class="hud" id="timing">
+  <div class="label">LEERTASTE am Schanzentisch</div>
+  <div id="timingBar">
+    <div id="timingZone"></div>
+    <div id="timingMarker"></div>
+  </div>
+</div>
+
+<div class="hud" id="attitude">
+  <div id="attInner">
+    <div id="horizon"></div>
+    <div id="crosshairMark"></div>
+  </div>
+  <div id="attText">STABIL</div>
+</div>
+
+<div class="hud" id="cross"></div>
+<div class="hud" id="flash"></div>
+<div class="hud" id="vignette"></div>
+
+<div class="overlay" id="startOverlay">
+  <div class="card">
+    <h1>EDDIE <span class="accent">THE EAGLE</span></h1>
+    <h2>SKISPRINGEN IN EGO-PERSPEKTIVE &mdash; K120-GROSSCHANZE</h2>
+    <div id="menu"></div>
+    <div class="menuNote" id="menuNote">&#8593; / &#8595; WÄHLEN &mdash; LEERTASTE BESTÄTIGT</div>
+    <div class="controls">
+      <b>LEERTASTE</b> Anfahrt starten &mdash; am Tisch abspringen<br>
+      <b>&#8593; / &#8595;</b> Im Flug vorlehnen / zurücklehnen<br>
+      <b>&#8592; / &#8594;</b> Gegen den Seitenwind stabilisieren<br>
+      <b>LEERTASTE</b> Kurz vor der Landung &rarr; Telemark<br>
+      <b>R</b> Neustart &mdash; <b>ESC</b> Hauptmenü
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="resultOverlay" style="display:none">
+  <div class="card" id="resultCard">
+    <div class="label">Sprungweite</div>
+    <div class="dist" id="resDist">0 <span>m</span></div>
+    <div class="verdict" id="resVerdict"></div>
+    <table class="statTable">
+      <tr><td>Absprung-Timing</td><td id="resJump">&mdash;</td></tr>
+      <tr><td>Flugstabilität</td><td id="resStyle">&mdash;</td></tr>
+      <tr><td>Landung</td><td id="resLanding">&mdash;</td></tr>
+      <tr><td>Weitenpunkte</td><td id="resPoints">&mdash;</td></tr>
+      <tr><td>Gesamt</td><td class="statTotal" id="resTotal">&mdash;</td></tr>
+      <tr><td id="resBestLabel">Persönliche Bestweite</td><td id="resBest">&mdash;</td></tr>
+    </table>
+    <div class="go bigKey" id="resNext">LEERTASTE — NOCHMAL SPRINGEN · ESC — HAUPTMENÜ</div>
+  </div>
+</div>
+
+<div class="overlay" id="nextOverlay" style="display:none">
+  <div class="card">
+    <h2 id="nextRound">DURCHGANG</h2>
+    <h1 id="nextName" class="accent">&mdash;</h1>
+    <h2 id="nextJump">&mdash;</h2>
+    <table id="nextStandings"></table>
+    <div id="nextInfo" style="margin-bottom:18px; font-size:14px; opacity:0.8;"></div>
+    <div class="go bigKey">LEERTASTE — SPRUNG STARTEN · ESC — HAUPTMENÜ</div>
+  </div>
+</div>
+
+<div class="overlay" id="trailerOverlay" style="display:none">
+  <div class="tInfo">
+    <div class="label" id="trStation">&mdash;</div>
+    <h1 id="trName">&mdash;</h1>
+    <div class="tDesc" id="trDesc">&mdash;</div>
+    <div class="tWinners" id="trWinners"></div>
+  </div>
+  <div id="trStandingsBox">
+    <div class="label" id="trStandLabel">Gesamtstand</div>
+    <table id="trStandings"></table>
+  </div>
+  <div class="go bigKey" id="trHint">LEERTASTE — TRAILER ÜBERSPRINGEN</div>
+</div>
+
+<div class="overlay" id="compOverlay" style="display:none">
+  <div class="card">
+    <h1>WETT<span class="accent">KAMPF</span></h1>
+    <h2>SPRINGER ANMELDEN</h2>
+    <ol id="compPlayerList"></ol>
+    <input id="compNameInput" maxlength="16" placeholder="Springer-Name …" autocomplete="off" spellcheck="false">
+    <div id="compError"></div>
+    <div class="menuNote">NAME + ENTER — SPRINGER HINZUFÜGEN (2 BIS 8)<br>LEERES FELD + RÜCKTASTE — LETZTEN NAMEN ENTFERNEN<br>LEERES FELD + ENTER — WETTKAMPF STARTEN · ESC — ZURÜCK</div>
+  </div>
+</div>
+
+<div class="overlay" id="podiumOverlay" style="display:none">
+  <div class="card" id="podiumCard">
+    <h1>SIEGER<span class="accent">EHRUNG</span></h1>
+    <h2>&mdash;</h2>
+    <div class="podium"></div>
+    <table class="statTable compRanking"></table>
+    <div class="go bigKey" id="podiumNext">LEERTASTE — NEUER WETTKAMPF · ESC — HAUPTMENÜ</div>
+  </div>
+</div>
+
+<div class="overlay" id="loadError">
+  <div class="card">
+    <h1 style="font-size:26px; letter-spacing:2px;">3D-Engine konnte nicht geladen werden</h1>
+    <h2 style="margin-bottom:10px;">Das Spiel lädt three.js von einem CDN &mdash; dafür ist eine Internetverbindung nötig.</h2>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+//  CONSTANTS & GLOBALS
+// ============================================================
+const G = 9.81;
+const D2R = Math.PI / 180;
+const RUN_MU = 0.018;
+const OPT_PITCH = 0.56;             // optimale Fluglage (nose-down, rad)
+
+// Schanzen-Definitionen — Geometrie und Flugphysik sind datengetrieben
+const HILLS = [
+  {
+    id: 'heimat', name: 'HEIMATSCHANZE',
+    gateX: -78, edgeY: 8, K: 120, HS: 130, record: 132.0,
+    liftC: 0.0076, dragC: 0.0010, boards: [60, 90, 105, 120, 135],
+    desc: 'K120 · HS130 · Rekord 132,0 m · Absprung ~101 km/h · Tischhöhe 8 m'
+  },
+  {
+    id: 'oberstdorf', name: 'OBERSTDORF', ringTribune: true,
+    gateX: -68, edgeY: 10, K: 120, HS: 137, record: 143.5,
+    liftC: 0.0105, dragC: 0.0010, boards: [70, 95, 110, 120, 130],
+    desc: 'K120 · HS137 · Rekord 143,5 m · Absprung ~92 km/h · Tischhöhe 10 m · Turm ~45 m'
+  },
+  {
+    id: 'garmisch', name: 'GARMISCH-PARTENKIRCHEN', crowd: true, night: true, smallNeighbor: true,
+    gateX: -70, edgeY: 6, K: 125, HS: 142, record: 145.5,
+    liftC: 0.0104, dragC: 0.0010, boards: [70, 95, 110, 125, 135, 140],
+    desc: 'K125 · HS142 · Rekord 145,5 m · Absprung ~94 km/h · Nachtspringen unter Flutlicht'
+  },
+  {
+    id: 'innsbruck', name: 'INNSBRUCK (BERGISEL)', crowd: true, concreteTower: true,
+    gateX: -70, edgeY: 12, K: 120, HS: 130, record: 138.0,
+    liftC: 0.0094, dragC: 0.0010, boards: [65, 95, 105, 120, 130],
+    desc: 'K120 · HS130 · Rekord 138,0 m · Absprung ~94 km/h · Tischhöhe 12 m · Turm ~50 m'
+  },
+  {
+    id: 'bischofshofen', name: 'BISCHOFSHOFEN', crowd: true, patchySnow: true, village: true,
+    gateX: -72, edgeY: 7, K: 125, HS: 142, record: 145.0,
+    liftC: 0.0098, dragC: 0.0010, boards: [70, 95, 110, 125, 135, 140],
+    desc: 'K125 · HS142 · Rekord 145,0 m · Absprung ~96 km/h · Tischhöhe 7 m'
+  },
+];
+let HILL = HILLS[0];
+let GATE_X = HILL.gateX, EDGE_Y = HILL.edgeY;
+let K_POINT = HILL.K, HS_POINT = HILL.HS;
+let LIFT_C = HILL.liftC, DRAG_C = HILL.dragC;
+const EYE = 1.62;                    // eye height above skis
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---- landing hill profile: shallow under takeoff, steep at knar, flat outrun ----
+const hillSlope = x => -0.75 * (1 - Math.exp(-x / 30)) * Math.exp(-x / 300);
+const HILL_N = 1800, HILL_DX = 420 / (HILL_N - 1);
+const hillTab = new Float64Array(HILL_N);
+for (let i = 1; i < HILL_N; i++) hillTab[i] = hillTab[i - 1] + hillSlope((i - 0.5) * HILL_DX) * HILL_DX;
+function hillY(x) {
+  if (x <= 0) return 0;
+  if (x >= 420) x = 419.999;
+  const f = x / HILL_DX, i = Math.floor(f), t = f - i;
+  return hillTab[i] * (1 - t) + hillTab[i + 1] * t;
+}
+
+// ---- in-run profile: 32 deg ramp, transition, 10.5 deg table ----
+function trackAngle(x) {
+  if (x < -24) return -32 * D2R;
+  if (x < -10) {
+    const t = (x + 24) / 14, c = 0.5 * (1 - Math.cos(Math.PI * t));
+    return -(32 + (10.5 - 32) * c) * D2R;
+  }
+  return -10.5 * D2R;
+}
+const trackTab = [];  // {x, y} alle 0,25 m vom Start bis zur Tischkante
+let GATE_Y = 0;
+function buildTrackTable() {
+  trackTab.length = 0;
+  let acc = 0, x = GATE_X;
+  trackTab.push({ x, y: 0 });
+  while (x < 0) {
+    const xn = Math.min(x + 0.25, 0);
+    acc += 0.5 * (Math.tan(trackAngle(x)) + Math.tan(trackAngle(xn))) * (xn - x);
+    x = xn;
+    trackTab.push({ x, y: acc });
+  }
+  const off = EDGE_Y - acc;   // Höhe so verschieben, dass die Tischkante auf EDGE_Y liegt
+  for (const p of trackTab) p.y += off;
+  GATE_Y = trackTab[0].y;
+}
+buildTrackTable();
+function trackY(x) {
+  x = clamp(x, GATE_X, 0);
+  const i = Math.min(trackTab.length - 2, Math.floor((x - GATE_X) / 0.25));
+  const t = (x - trackTab[i].x) / 0.25;
+  return lerp(trackTab[i].y, trackTab[i + 1].y, t);
+}
+
+// half width of the prepared piste (the landing hill is built, not natural)
+function pisteHalf(x) {
+  if (x <= 0) return 8;
+  return 12 + 26 * clamp(x / 160, 0, 1);   // narrow at the knar, widens toward the outrun
+}
+// runde Auslaufarena am Pistenende
+const ARENA_X = 212, ARENA_R = 42, OUTRUN_CAP = 165;
+
+// full terrain surface (visual mesh + landing reference)
+function surfaceY(x, z) {
+  const az = Math.abs(z);
+  let base, edge = 0;
+  if (x >= 0) {
+    base = hillY(x);
+    // ab hier flacht der Auslauf in die ebene Arena ab (Sprünge landen alle davor)
+    if (x > OUTRUN_CAP) base = hillY(OUTRUN_CAP) + (base - hillY(OUTRUN_CAP)) * Math.exp(-(x - OUTRUN_CAP) / 28);
+    const dx = x - ARENA_X;
+    const dA = Math.sqrt(dx * dx + z * z) - ARENA_R;   // Abstand zum Arenarand (innen: <0)
+    const dz = az - pisteHalf(x);                     // Abstand zum geraden Pistenrand
+    if (dA < 0) {
+      edge = 0;                                       // Arena: ebene Kreisfläche
+    } else {
+      // Arenaform: Tribüne steigt am Rand an (keine Erhebung am Einlauf),
+      // fällt hinter dem Kamm ins Tal ab
+      const phi = Math.atan2(z, dx);
+      const w = Math.pow(Math.max(0, 0.5 + 0.5 * Math.cos(phi)), 1.5);
+      let eC;
+      if (dA < 45) eC = w * (0.13 * dA + 0.0012 * dA * dA);
+      else {
+        const d2 = dA - 45;
+        eC = w * (0.13 * 45 + 0.0012 * 45 * 45) - (0.03 * d2 + 0.0012 * d2 * d2);
+      }
+      const nfA = clamp(dA / 60, 0, 1);
+      eC += nfA * (1.1 * Math.sin(x * 0.05) * Math.sin(z * 0.047 + 0.9) + 0.6 * Math.sin(x * 0.15 + z * 0.08));
+      if (dz < 0 && x <= ARENA_X + ARENA_R) {
+        edge = 0;                                     // Trichter zwischen Piste und Arena
+      } else if (dz < 0) {
+        edge = eC;                                    // hinter der Arena
+      } else {
+        // gerader Pistenrand: Tal fällt ab (+ Wellen)
+        const nfS = clamp(dz / 60, 0, 1);
+        const eS = -(0.0007 * dz * dz + 0.004 * dz)
+          + nfS * (1.1 * Math.sin(x * 0.06) * Math.sin(z * 0.051 + 1.7) + 0.6 * Math.sin(x * 0.17 + z * 0.09));
+        // Übergang nach Nähe zum jeweiligen Rand mischen
+        edge = (eS * dA + eC * dz) / (dA + dz);
+      }
+    }
+  } else {
+    base = Math.min(6, -x * 1.05);   // Plateau deutlich unter der Anlaufbahn, keine "weiße Wand"
+    const dz = az - 10;
+    if (dz > 0) edge = -0.0006 * dz * dz;
+    const nf = clamp((az - 10) / 60, 0, 1);
+    edge += nf * (0.9 * Math.sin(x * 0.11) * Math.sin(z * 0.093 + 1.3) + 0.5 * Math.sin(x * 0.31 + z * 0.17));
+  }
+  let y = base + edge;
+  // Garmisch: kleine, ungenutzte Nachbarschanze (rechts in Fahrtrichtung, +z)
+  if (HILL && HILL.smallNeighbor) {
+    const dzs = z - 78;
+    if (Math.abs(dzs) < 26 && x > -100) {
+      const w = 1 - Math.abs(dzs) / 26;
+      y += smallHillProfile(x) * w * w * (3 - 2 * w);
+    }
+  }
+  return y;
+}
+function smallHillProfile(x) {
+  // Erd-Hügel: Schanzentisch bei x = -6 (+2,6 m), Landung fällt exponentiell ab,
+  // hinten steigt der Hügel bis auf 16 m als Unterbau für den alten Anlauf
+  let p = Math.min(2.6 * Math.exp(-(x + 6) / 15), 16);
+  if (x < -70) p *= clamp((x + 100) / 30, 0, 1);
+  if (x > 60) p *= Math.exp(-(x - 60) / 18);
+  return p;
+}
+
+// ============================================================
+//  RENDERER / SCENE
+// ============================================================
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (e) {
+  document.getElementById('loadError').style.display = 'flex';
+  throw e;
+}
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fd2f7);
+scene.fog = new THREE.Fog(0xc3dcf2, 120, 980);
+
+const camera = new THREE.PerspectiveCamera(80, innerWidth / innerHeight, 0.1, 1400);
+camera.rotation.order = 'YXZ';
+camera.rotation.y = -Math.PI / 2;   // always look along +x
+
+const hemi = new THREE.HemisphereLight(0xd6ecff, 0x8fa3b8, 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2dd, 2.6);
+sun.position.set(-200, 260, -160);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -260;
+sun.shadow.camera.right = 420;
+sun.shadow.camera.top = 260;
+sun.shadow.camera.bottom = -260;
+sun.shadow.camera.near = 40;
+sun.shadow.camera.far = 1200;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xcfe4ff, 0.45);
+fill.position.set(150, 220, 260);
+scene.add(fill);
+
+// ---- sky gradient dome + sun disc (Tag/Nacht je Schanze austauschbar) ----
+let skyDome, sunSprite, skyTexDay, skyTexNight;
+(function buildSky() {
+  function skyTex(stops) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 512;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    for (const [o, col] of stops) grad.addColorStop(o, col);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 512);
+    return new THREE.CanvasTexture(c);
+  }
+  skyTexDay = skyTex([[0.00, '#2f6db3'], [0.45, '#7db4e6'], [0.72, '#c6e2f7'], [1.00, '#f4f9fd']]);
+  skyTexNight = skyTex([[0.00, '#04060e'], [0.45, '#0a1526'], [0.72, '#152a44'], [1.00, '#24405e']]);
+  skyDome = new THREE.Mesh(
+    new THREE.SphereGeometry(1000, 24, 16),
+    new THREE.MeshBasicMaterial({ map: skyTexDay, side: THREE.BackSide, fog: false })
+  );
+  scene.add(skyDome);
+
+  const sc = document.createElement('canvas');
+  sc.width = sc.height = 128;
+  const sctx = sc.getContext('2d');
+  const g2 = sctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+  g2.addColorStop(0, 'rgba(255,255,255,1)');
+  g2.addColorStop(0.25, 'rgba(255,250,225,0.9)');
+  g2.addColorStop(1, 'rgba(255,250,225,0)');
+  sctx.fillStyle = g2;
+  sctx.fillRect(0, 0, 128, 128);
+  sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(sc), transparent: true, blending: THREE.AdditiveBlending, fog: false, depthWrite: false
+  }));
+  sunSprite.position.set(-620, 330, -500);
+  sunSprite.scale.set(180, 180, 1);
+  scene.add(sunSprite);
+})();
+
+// ============================================================
+//  TERRAIN
+// ============================================================
+function buildTerrain() {
+  const xMin = -200, xMax = 420, zHalf = 195;
+  const nx = 340, nz = 130;
+  const pos = [], col = [], idx = [];
+  let seed = 1;
+  const rand = () => (seed = (seed * 16807 + 17) % 2147483647) / 2147483647;
+  for (let iz = 0; iz < nz; iz++) {
+    const z = -zHalf + (2 * zHalf * iz) / (nz - 1);
+    for (let ix = 0; ix < nx; ix++) {
+      const x = xMin + ((xMax - xMin) * ix) / (nx - 1);
+      const y = surfaceY(x, z);
+      pos.push(x, y, z);
+      const inArena = (x - ARENA_X) * (x - ARENA_X) + z * z < (ARENA_R + 3) * (ARENA_R + 3);
+      const onPiste = (x >= -1 && x <= 246 && Math.abs(z) < pisteHalf(x) - 0.5) || inArena;
+      const v = rand();
+      if (onPiste) {
+        // bright, groomed white for the prepared piste
+        const s = 0.94 + 0.04 * v;
+        col.push(s, s * 0.995, s * 0.99);
+      } else {
+        const s = 0.80 + 0.10 * v;
+        if (HILL && HILL.patchySnow) {
+          // lückenhafte Schneedecke — trockene Wiesen scheinen durch
+          const patch = clamp(0.5 + 0.5 * Math.sin(x * 0.045 + 1.3) * Math.sin(z * 0.06 - 0.7), 0, 1);
+          const g = patch * (0.45 + 0.55 * v);
+          col.push(lerp(s, 0.44, g), lerp(s * 1.0, 0.56, g), lerp(s * 1.02, 0.33, g));
+        } else {
+          col.push(s, s * 1.0, s * 1.02);
+        }
+      }
+    }
+  }
+  for (let iz = 0; iz < nz - 1; iz++) {
+    for (let ix = 0; ix < nx - 1; ix++) {
+      const a = iz * nx + ix, b = a + 1, c = a + nx, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0.0 }));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+// Terrain + komplette Anlage werden pro Schanze in buildVenue() zusammengesetzt
+
+// ---- in-run: track with grooves, walls, rails, steel lattice tower, start gate ----
+function buildInrun() {
+  const g = new THREE.Group();
+  const trackMat = new THREE.MeshStandardMaterial({ color: 0xf2f7fc, roughness: 0.5, side: THREE.DoubleSide });
+  const grooveMat = new THREE.MeshStandardMaterial({ color: 0xa9c3da, roughness: 0.25, side: THREE.DoubleSide });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xdee8f2, roughness: 0.85, side: THREE.DoubleSide });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x93a7bd, roughness: 0.5, metalness: 0.4 });
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x44566e, roughness: 0.65, metalness: 0.3 });
+
+  // horizontal ribbon between zA..zB along the track
+  function ribbon(zA, zB, mat, yOff) {
+    const pos = [], idx = [];
+    let n = 0;
+    for (let x = GATE_X; x <= 0.001; x += 0.5) {
+      const y = trackY(x);
+      pos.push(x, y + yOff, zA, x, y + yOff, zB);
+      if (n > 0) {
+        const a = (n - 1) * 2, b = a + 1, c = a + 2, d = a + 3;
+        // upward-facing triangles (a,b,c) and (b,d,c)
+        idx.push(a, b, c, b, d, c);
+      }
+      n++;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat);
+    m.receiveShadow = true;
+    return m;
+  }
+
+  g.add(ribbon(-4.2, 4.2, trackMat, 0));
+  // Die zwei Eisrillen liegen bei ±0,46 m: auf dem Boden betrachtet weiter
+  // außen, aus der Ego-Perspektive (steiler Blick auf die Füße) laufen sie
+  // exakt unter den Ski-Silhouetten durch (Zentrum und Spitzen projiziert).
+  g.add(ribbon(-0.58, -0.34, grooveMat, 0.03));
+  g.add(ribbon(0.34, 0.58, grooveMat, 0.03));
+
+  // Optimale Absprungzone (letzte 6,5 m vor der Kante) grün einfärben —
+  // deckt sich mit der grünen Zone der Timing-Leiste
+  {
+    const zoneMat = new THREE.MeshStandardMaterial({ color: 0x35c46a, roughness: 0.5, side: THREE.DoubleSide });
+    const pos = [], idx = [];
+    let n = 0;
+    for (let x = -TIMING_WINDOW; x <= 0.001; x += 0.5) {
+      const y = trackY(x);
+      pos.push(x, y + 0.04, -4.2, x, y + 0.04, 4.2);
+      if (n > 0) {
+        const a = (n - 1) * 2, b = a + 1, c = a + 2, d = a + 3;
+        idx.push(a, b, c, b, d, c);
+      }
+      n++;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo, zoneMat));
+  }
+
+  // concrete block under the take-off table so the edge does not float
+  // (slab tilted parallel to the table, top just below the track surface)
+  const slabH = EDGE_Y + 1.2;
+  const table = new THREE.Mesh(new THREE.BoxGeometry(11, slabH, 8.4), new THREE.MeshStandardMaterial({ color: 0xc4d2df, roughness: 0.9 }));
+  table.position.set(-5, (trackY(-10) + trackY(0)) / 2 - 0.35 - slabH / 2, 0);
+  table.rotation.z = trackAngle(0);
+  table.castShadow = true;
+  table.receiveShadow = true;
+  g.add(table);
+
+  // side walls + railing tubes
+  for (const side of [-4.2, 4.2]) {
+    const pos = [], idx = [];
+    let n = 0;
+    for (let x = GATE_X; x <= 0.001; x += 0.5) {
+      const y = trackY(x);
+      pos.push(x, y, side, x, y + 1.15, side);
+      if (n > 0) {
+        const a = (n - 1) * 2, b = a + 1, c = a + 2, d = a + 3;
+        if (side < 0) idx.push(a, b, c, b, d, c);      // outward normal -z
+        else idx.push(a, c, b, b, c, d);               // outward normal +z
+      }
+      n++;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const wall = new THREE.Mesh(geo, wallMat);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    g.add(wall);
+
+    const pts = [];
+    for (let x = GATE_X; x <= 0.001; x += 2) pts.push(new THREE.Vector3(x, trackY(x) + 1.3, side));
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 90, 0.09, 6), railMat));
+  }
+
+  // steel lattice support tower
+  const up = new THREE.Vector3(0, 1, 0);
+  function brace(p1, p2, r) {
+    const dir = new THREE.Vector3().subVectors(p2, p1);
+    const len = dir.length();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(r, len, r), steelMat);
+    m.position.copy(p1).addScaledVector(dir, 0.5);
+    m.quaternion.setFromUnitVectors(up, dir.normalize());
+    m.castShadow = true;
+    g.add(m);
+  }
+  if (HILL.concreteTower) {
+    // Bergisel-Stil: kein Stahlfachwerk — ein großer Betonpfeiler am Start,
+    // darauf ein Glasgebäude über dem Startpunkt (nach dem echten Bergisel-Turm)
+    const px = GATE_X - 4.2;
+    const topY = GATE_Y + 1.5;
+    const ground = surfaceY(px, 0) - 1;
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.4, 6.0, topY - ground, 10),
+      new THREE.MeshStandardMaterial({ color: 0xb9c4d0, roughness: 0.9 })
+    );
+    shaft.position.set(px, ground + (topY - ground) / 2, 0);
+    shaft.castShadow = true;
+    shaft.receiveShadow = true;
+    g.add(shaft);
+    // Glasaufsatz mit Geschossdecken und Dachplatte
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0xbcd8ee, roughness: 0.12, metalness: 0.15, transparent: true, opacity: 0.55 });
+    const slabMat = new THREE.MeshStandardMaterial({ color: 0xd3dde8, roughness: 0.85 });
+    const bBase = topY + 0.5, bHeight = 7.5;
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, bHeight, 10), glassMat);
+    glass.position.set(px, bBase + bHeight / 2, 0);
+    glass.castShadow = true;
+    g.add(glass);
+    for (const fy of [bBase + 3.6, bBase + bHeight + 0.25]) {
+      const slab = new THREE.Mesh(new THREE.CylinderGeometry(4.3, 4.3, 0.5, 10), slabMat);
+      slab.position.set(px, fy, 0);
+      slab.castShadow = true;
+      g.add(slab);
+    }
+  } else {
+    for (let x = GATE_X + 4; x < -6; x += 12) {
+    const x2 = Math.min(x + 12, -6);
+    for (const side of [-3.4, 3.4]) {
+      const gy = surfaceY(x, side) - 0.4, top = trackY(x);
+      const h = top - gy;
+      if (h < 3) continue;
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, h, 0.55), steelMat);
+      leg.position.set(x, gy + h / 2, side);
+      leg.castShadow = true;
+      g.add(leg);
+      // horizontal cross beam between the two legs
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.45, 6.8), steelMat);
+      beam.position.set(x, gy + h * 0.55, 0);
+      g.add(beam);
+      // diagonal brace down towards the next section
+      const gy2 = surfaceY(x2, side) - 0.4;
+      const h2 = trackY(x2) - gy2;
+      if (h2 > 3) {
+        brace(new THREE.Vector3(x, gy + h * 0.9, side), new THREE.Vector3(x2, gy2 + h2 * 0.2, side), 0.22);
+      }
+    }
+    }
+  }
+
+  // start gate: posts, crossbar, sit bar, banner
+  const gate = new THREE.Group();
+  for (const side of [-4.2, 4.2]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 3.1, 6), railMat);
+    post.position.set(GATE_X, GATE_Y + 1.45, side);
+    post.castShadow = true;
+    gate.add(post);
+  }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 9), railMat);
+  bar.position.set(GATE_X, GATE_Y + 2.9, 0);
+  bar.castShadow = true;
+  gate.add(bar);
+  const sitbar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 9), steelMat);
+  sitbar.position.set(GATE_X + 0.2, GATE_Y + 0.72, 0);
+  gate.add(sitbar);
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.95, 8.4), new THREE.MeshStandardMaterial({ color: 0xc92a2a }));
+  banner.position.set(GATE_X - 0.22, GATE_Y + 2.5, 0);
+  gate.add(banner);
+  g.add(gate);
+  return g;
+}
+// ---- K-/HS-Bindestriche quer über die Piste ----
+function stripe(venue, x, color) {
+  const s = Math.atan(hillSlope(x));
+  const width = pisteHalf(x) * 2 - 2;
+  // Schmale Linie, die bündig im Schnee liegt — die Ski gleiten darüber, nicht darunter durch (Bodenhöhe der Ski: ~+0.05 m)
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, width), new THREE.MeshStandardMaterial({ color, roughness: 0.7 }));
+  mesh.position.set(x, hillY(x) + 0.025, 0);
+  mesh.rotation.z = s;
+  mesh.receiveShadow = true;
+  venue.add(mesh);
+}
+// (Aufruf erfolgt über buildVenue)
+
+// ---- rot-weiße Absperrmauern an beiden Pistenrändern ----
+function buildBarriers(venue) {
+  const geo = new THREE.BoxGeometry(6.6, 1.05, 0.28);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+  const perSide = Math.ceil((246 - 3) / 6.5);
+  const im = new THREE.InstancedMesh(geo, mat, perSide * 2);
+  im.castShadow = true;
+  im.receiveShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
+  const e = new THREE.Euler(), red = new THREE.Color(0xe8380d), white = new THREE.Color(0xf5f7fa);
+  let i = 0, k = 0;
+  for (let x = 3; x < 168; x += 6.5, k++) {
+    const xc = x + 3.25;
+    const ang = Math.atan(hillSlope(xc));
+    e.set(0, 0, ang);
+    q.setFromEuler(e);
+    const half = pisteHalf(xc) + 0.6;
+    const yBase = hillY(xc);
+    for (const side of [-1, 1]) {
+      m.compose(new THREE.Vector3(xc, yBase + 0.52, side * half), q, sc);
+      im.setMatrixAt(i, m);
+      im.setColorAt(i, (k % 2 === 0) ? red : white);
+      i++;
+    }
+  }
+  im.count = i;
+  venue.add(im);
+}
+
+// ---- Kampfrichterturm am Knie ----
+function buildJudgesTower(venue) {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x41566c, roughness: 0.8 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xbcd8ee, roughness: 0.15, metalness: 0.2 });
+  const bx = 16, bz = -32;
+  const baseY = surfaceY(bx, bz) - 1;
+  const H = 30;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(7, H, 6), bodyMat);
+  body.position.set(bx, baseY + H / 2, bz);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+  for (let f = 0; f < 5; f++) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.0, 6.2), glassMat);
+    win.position.set(bx, baseY + 4.6 + f * 5.2, bz);
+    g.add(win);
+  }
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.6, 7.6), bodyMat);
+  roof.position.set(bx, baseY + H + 0.35, bz);
+  g.add(roof);
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.4, 6), bodyMat);
+  flagPole.position.set(bx, baseY + H + 0.35 + 1.7, bz);
+  g.add(flagPole);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.9, 1.5), new THREE.MeshStandardMaterial({ color: 0xe8380d }));
+  flag.position.set(bx, baseY + H + 0.35 + 3.2, bz + 0.8);
+  g.add(flag);
+  venue.add(g);
+}
+
+// ---- Flutlichtmasten — bei Nacht höhere Masten plus echte Scheinwerfer auf die Piste ----
+function buildFloodlights(venue) {
+  const night = !!HILL.night;
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b8, roughness: 0.6, metalness: 0.4 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x333a44, emissive: 0xfff3c4, emissiveIntensity: night ? 4.5 : 1.2, roughness: 0.5 });
+  const masts = night ? [-32, 35, 100, 155] : [40, 95, 155];
+  const h = night ? 32 : 24;
+  for (const x of masts) {
+    for (const side of [-1, 1]) {
+      const z = side * (pisteHalf(x) + (night ? 22 : 16));
+      const base = surfaceY(x, z) - 0.5;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.42, h, 6), poleMat);
+      pole.position.set(x, base + h / 2, z);
+      pole.castShadow = true;
+      venue.add(pole);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(night ? 6.2 : 4.6, night ? 2.2 : 1.5, 0.8), headMat);
+      head.position.set(x, base + h + 0.7, z);
+      head.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      venue.add(head);
+      if (night) {
+        const lamp = new THREE.SpotLight(0xd9e6ff, 1.3, 220, 0.62, 0.5, 0);
+        lamp.position.set(x, base + h + 0.7, z);
+        const tg = new THREE.Object3D();
+        tg.position.set(x + 18, hillY(Math.max(x + 18, 1)), 0);
+        venue.add(tg);
+        lamp.target = tg;
+        venue.add(lamp);
+      }
+    }
+  }
+}
+
+// ---- Fahnen an der Barrierenlinie ----
+function buildFlags(venue) {
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x8d99ae, roughness: 0.6 });
+  const cols = [0xe03131, 0x1c7ed6, 0xffd43b, 0x2f9e44];
+  let ci = 0;
+  for (let x = 15; x <= 135; x += 15) {
+    for (const side of [-1, 1]) {
+      const z = side * (pisteHalf(x) + 2.2);
+      const y = hillY(x);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 5.4, 5), poleMat);
+      pole.position.set(x, y + 2.7, z);
+      pole.castShadow = true;
+      const flag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.85, 1.5), new THREE.MeshStandardMaterial({ color: cols[ci % 4] }));
+      flag.position.set(x, y + 4.6, z + side * 0.7);
+      venue.add(pole, flag);
+    }
+    ci++;
+  }
+}
+
+// ---- Meterbretter an beiden Pistenrändern ----
+function buildBoards(venue) {
+  function boardTexture(txt, bg, fg) {
+    const c = document.createElement('canvas');
+    c.width = 200; c.height = 110;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 200, 110);
+    ctx.strokeStyle = fg; ctx.lineWidth = 6; ctx.strokeRect(6, 6, 188, 98);
+    ctx.fillStyle = fg;
+    ctx.font = 'bold 68px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, 100, 58);
+    return new THREE.CanvasTexture(c);
+  }
+  for (const d of HILL.boards) {
+    const tex = boardTexture(String(d), '#0b1b30', d === HILL.K ? '#ffe066' : '#ffffff');
+    for (const side of [-1, 1]) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      sp.scale.set(10, 5.5, 1);
+      sp.position.set(d, hillY(d) + 5, side * (pisteHalf(d) + 5));
+      venue.add(sp);
+    }
+  }
+}
+
+// ---- Bäume (hinter den Barrieren, mit Schattenwurf) ----
+function buildTrees(venue) {
+  const N = 200;
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 2.8, 5);
+  const coneGeo = new THREE.ConeGeometry(2.0, 6.4, 7);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4632, roughness: 0.9 });
+  const coneMat = new THREE.MeshStandardMaterial({ color: 0x30603f, roughness: 0.95 });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, N);
+  const cones = new THREE.InstancedMesh(coneGeo, coneMat, N);
+  trunks.castShadow = true;
+  cones.castShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  let seed = 77;
+  const rand = () => (seed = (seed * 48271 + 29) % 2147483647) / 2147483647;
+  let i = 0, guard = 0;
+  while (i < N && guard++ < 5000) {
+    const x = -230 + rand() * 660;
+    const z = (46 + rand() * 140) * (rand() < 0.5 ? -1 : 1);
+    if (x > -6 && x < 250 && Math.abs(z) < pisteHalf(Math.max(x, 1)) + 8) continue;  // keep venue clear
+    if (x > 100 && Math.sqrt((x - ARENA_X) * (x - ARENA_X) + z * z) < ARENA_R + 55) continue;  // Arena + Tribüne freihalten
+    if (HILL.smallNeighbor && x > -75 && x < 90 && Math.abs(z - 78) < 32) continue;  // kleine Nachbarschanze freihalten
+    if (HILL.village && x > 225 && x < 350 && Math.abs(z) < 145) continue;          // Dorffreihaltung
+    const s = 0.8 + rand() * 0.9;
+    const y = surfaceY(x, z) - 0.4;
+    sc.set(s, s, s);
+    m.compose(new THREE.Vector3(x, y + 1.4 * s, z), q, sc);
+    trunks.setMatrixAt(i, m);
+    m.compose(new THREE.Vector3(x, y + (2.8 + 3.2) * s, z), q, sc);
+    cones.setMatrixAt(i, m);
+    i++;
+  }
+  trunks.count = cones.count = i;
+  venue.add(trunks, cones);
+}
+
+// ---- Zuschauer: 6 Reihen ringförmig um die Auslaufarena (Einlauf frei) ----
+function buildSpectators(venue) {
+  const N = 700;
+  const bodyGeo = new THREE.CylinderGeometry(0.16, 0.22, 0.85, 6);
+  const headGeo = new THREE.SphereGeometry(0.11, 6, 5);
+  const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ roughness: 0.9 }), N);
+  const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), N);
+  bodies.castShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const colors = [0xd62828, 0x1d3557, 0x2a9d8f, 0xf77f00, 0x6a4c93, 0x22333b, 0xe07a5f, 0x2b6cb0, 0xb7791f, 0xc92a80];
+  const skins = [0xeac086, 0xd08a60, 0xf1c27d, 0x8d5524];
+  let seed = 4242;
+  const rand = () => (seed = (seed * 48271 + 29) % 2147483647) / 2147483647;
+  let i = 0;
+  const A_MAX = 2.705;   // ca. ±155° — der Einlaufsektor bleibt frei
+  for (let row = 0; row < 6 && i < N; row++) {
+    const r = ARENA_R + 3.2 + row * 2.4;
+    const aStep = 2.35 / r;
+    for (let a = -A_MAX; a <= A_MAX && i < N; a += aStep) {
+      if (rand() < 0.15) continue;   // Lücken in der Zuschauermenge
+      const px = ARENA_X + Math.cos(a) * r;
+      const pz = Math.sin(a) * r;
+      const y = surfaceY(px, pz) - 0.05;
+      const h = 0.85 + rand() * 0.3;
+      sc.set(1, h / 0.85, 1);
+      m.compose(new THREE.Vector3(px, y + h / 2, pz), q, sc);
+      bodies.setMatrixAt(i, m);
+      bodies.setColorAt(i, new THREE.Color(colors[Math.floor(rand() * colors.length)]));
+      const hr = 0.9 + rand() * 0.25;
+      sc.set(hr, hr, hr);
+      m.compose(new THREE.Vector3(px, y + h + 0.08 * hr, pz), q, sc);
+      heads.setMatrixAt(i, m);
+      heads.setColorAt(i, new THREE.Color(skins[Math.floor(rand() * skins.length)]));
+      i++;
+    }
+  }
+  bodies.count = heads.count = i;
+  venue.add(bodies, heads);
+}
+
+// ---- Oberstdorf: runde Zuschauertribüne im Auslauf (inkl. Publikum auf den Stufen) ----
+function buildRingTribune(venue) {
+  const A_MAX = 2.705;   // gleicher Einlaufsektor wie bei den Zuschauerringen
+  const y0 = surfaceY(ARENA_X, 0) + 0.05;
+  const rows = 10, stepW = 1.9, stepH = 0.9;
+  const r0 = ARENA_R + 2;
+  const stepMat = new THREE.MeshStandardMaterial({ color: 0x9aa7b8, roughness: 0.95, side: THREE.DoubleSide });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x77879b, roughness: 0.9, side: THREE.DoubleSide });
+  for (let i = 0; i < rows; i++) {
+    const rin = r0 + i * stepW;
+    // Setzstufe (senkrechte Fläche am inneren Rand der Reihe)
+    const riser = new THREE.Mesh(
+      new THREE.CylinderGeometry(rin, rin, stepH, 64, 1, true, Math.PI / 2 - A_MAX, 2 * A_MAX),
+      wallMat
+    );
+    riser.position.set(ARENA_X, y0 + i * stepH + stepH / 2, 0);
+    riser.receiveShadow = true;
+    venue.add(riser);
+    // Trittstufe (flacher Ring)
+    const tread = new THREE.Mesh(new THREE.RingGeometry(rin, rin + stepW, 72, 1, -A_MAX, 2 * A_MAX), stepMat);
+    tread.rotation.x = Math.PI / 2;
+    tread.position.set(ARENA_X, y0 + (i + 1) * stepH + 0.015, 0);
+    tread.receiveShadow = true;
+    venue.add(tread);
+  }
+  // Publikum auf den Stufen
+  const N = 1700;
+  const bodies = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.22, 0.85, 6), new THREE.MeshStandardMaterial({ roughness: 0.9 }), N);
+  const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.11, 6, 5), new THREE.MeshStandardMaterial({ roughness: 0.8 }), N);
+  bodies.castShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const colors = [0xd62828, 0x1d3557, 0x2a9d8f, 0xf77f00, 0x6a4c93, 0x22333b, 0xe07a5f, 0x2b6cb0, 0xb7791f, 0xc92a80];
+  const skins = [0xeac086, 0xd08a60, 0xf1c27d, 0x8d5524];
+  let seed = 901;
+  const rand = () => (seed = (seed * 48271 + 29) % 2147483647) / 2147483647;
+  let i = 0;
+  for (let row = 0; row < rows && i < N; row++) {
+    const r = r0 + row * stepW + 0.55;
+    const aStep = 1.5 / r;   // dichteres Publikum: rund doppelt so viele pro Reihe
+    const y = y0 + (row + 1) * stepH;   // Stufenoberfläche
+    for (let a = -A_MAX; a <= A_MAX && i < N; a += aStep) {
+      if (rand() < 0.15) continue;   // Lücken in der Zuschauermenge
+      const px = ARENA_X + Math.cos(a) * r;
+      const pz = Math.sin(a) * r;
+      const h = 0.85 + rand() * 0.3;
+      sc.set(1, h / 0.85, 1);
+      m.compose(new THREE.Vector3(px, y + h / 2, pz), q, sc);
+      bodies.setMatrixAt(i, m);
+      bodies.setColorAt(i, new THREE.Color(colors[Math.floor(rand() * colors.length)]));
+      const hr = 0.9 + rand() * 0.25;
+      sc.set(hr, hr, hr);
+      m.compose(new THREE.Vector3(px, y + h + 0.08 * hr, pz), q, sc);
+      heads.setMatrixAt(i, m);
+      heads.setColorAt(i, new THREE.Color(skins[Math.floor(rand() * skins.length)]));
+      i++;
+    }
+  }
+  bodies.count = heads.count = i;
+  venue.add(bodies, heads);
+}
+
+// ---- Garmisch: kleine ungenutzte Nachbarschanze (Anlauf auf Holzstützen) ----
+function buildSmallHill(venue) {
+  const zC = 78;
+  const g = new THREE.Group();
+  const rampMat = new THREE.MeshStandardMaterial({ color: 0xcfd9e4, roughness: 0.9 });   // alter, fester Schnee
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b5138, roughness: 0.95 });
+  // Anlaufbahn: vom hinteren Hügelplateau (x = -36) zum Tisch (x = -6)
+  const xA = -36, xB = -6;
+  const yA = surfaceY(xA, zC) + 0.3, yB = surfaceY(xB, zC) + 0.3;
+  const len = Math.hypot(xB - xA, yB - yA);
+  const ramp = new THREE.Mesh(new THREE.BoxGeometry(len, 0.35, 3.6), rampMat);
+  ramp.position.set((xA + xB) / 2, (yA + yB) / 2, zC);
+  ramp.rotation.z = Math.atan2(yB - yA, xB - xA);
+  ramp.castShadow = true;
+  ramp.receiveShadow = true;
+  g.add(ramp);
+  // Holzstützen unter der Bahn
+  for (const px of [-28, -19, -12]) {
+    const rh = surfaceY(xA, zC) + ((px - xA) / (xB - xA)) * (yB - yA);   // Bahn-Höhe bei px
+    const gy = surfaceY(px, zC) - 0.2;
+    const h = rh - 0.35 - gy;
+    if (h <= 0.4) continue;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, h, 0.4), woodMat);
+    post.position.set(px, gy + h / 2, zC);
+    post.castShadow = true;
+    g.add(post);
+    const braceH = new THREE.Mesh(new THREE.BoxGeometry(0.25, h * 0.62, 0.25), woodMat);
+    braceH.position.set(px - 2.4, gy + h * 0.31, zC);
+    braceH.rotation.z = 0.6;
+    g.add(braceH);
+  }
+  // alte Starthütte auf dem Plateau hinter der Bahn
+  const hutBase = surfaceY(xA - 4, zC) + 0.2;
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 3.2), woodMat);
+  hut.position.set(xA - 4, hutBase + 1.2, zC);
+  hut.castShadow = true;
+  g.add(hut);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.35, 3.9), woodMat);
+  roof.position.set(xA - 4, hutBase + 2.55, zC);
+  roof.castShadow = true;
+  g.add(roof);
+  venue.add(g);
+}
+
+
+let venue = null;
+// ---- Bischofshofen: kleines Dorf hinter der Arena ----
+function buildVillage(venue) {
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xd9ccb5, roughness: 0.9 });
+  const roofMatA = new THREE.MeshStandardMaterial({ color: 0x8a4a3b, roughness: 0.85 });
+  const roofMatB = new THREE.MeshStandardMaterial({ color: 0x6e5747, roughness: 0.85 });
+  const spireMat = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.8 });
+  const placed = [];
+  let seed = 20250;
+  const rand = () => (seed = (seed * 48271 + 29) % 2147483647) / 2147483647;
+  let i = 0, guard = 0;
+  while (i < 24 && guard++ < 600) {
+    const x = 238 + rand() * 92;
+    const z = (rand() * 2 - 1) * 125;
+    if (Math.hypot(x - ARENA_X, z) < 74) continue;       // Arena + Publikum freihalten
+    if (placed.some(p => Math.hypot(p[0] - x, p[1] - z) < 9)) continue;
+    placed.push([x, z]);
+    const w = 5.5 + rand() * 3.5, d = 5.5 + rand() * 3, h = 2.6 + rand() * 1.4;
+    const gy = surfaceY(x, z) - 0.3;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    body.position.set(x, gy + h / 2, z);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    venue.add(body);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.72, 2.0 + rand() * 0.8, 4), rand() < 0.5 ? roofMatA : roofMatB);
+    roof.rotation.y = Math.PI / 4;
+    roof.position.set(x, gy + h + 0.95, z);
+    roof.castShadow = true;
+    venue.add(roof);
+    i++;
+  }
+  // Kirche mit Turm und Spitzdach
+  const cx = ARENA_X + 104, cz = -52;
+  const gy = surfaceY(cx, cz) - 0.3;
+  const nave = new THREE.Mesh(new THREE.BoxGeometry(9, 4.4, 6), wallMat);
+  nave.position.set(cx - 3.4, gy + 2.2, cz);
+  nave.castShadow = true;
+  venue.add(nave);
+  const naveRoof = new THREE.Mesh(new THREE.ConeGeometry(4.4, 2.2, 4), roofMatB);
+  naveRoof.rotation.y = Math.PI / 4;
+  naveRoof.position.set(cx - 3.4, gy + 5.5, cz);
+  naveRoof.castShadow = true;
+  venue.add(naveRoof);
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(3.4, 9, 3.4), wallMat);
+  tower.position.set(cx + 2.8, gy + 4.5, cz);
+  tower.castShadow = true;
+  venue.add(tower);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(2.7, 3.6, 4), spireMat);
+  spire.rotation.y = Math.PI / 4;
+  spire.position.set(cx + 2.8, gy + 10.4, cz);
+  spire.castShadow = true;
+  venue.add(spire);
+}
+
+function buildVenue() {
+  const g = new THREE.Group();
+  g.add(buildTerrain());
+  g.add(buildInrun());
+  stripe(g, K_POINT, 0xe03131);   // K-Punkt-Linie (rot)
+  stripe(g, HS_POINT, 0x1c7ed6);  // HS-Linie (blau)
+  buildBarriers(g);
+  buildJudgesTower(g);
+  buildFloodlights(g);
+  buildFlags(g);
+  buildBoards(g);
+  buildTrees(g);
+  if (HILL.crowd) buildSpectators(g);
+  if (HILL.ringTribune) buildRingTribune(g);   // Oberstdorf: Rundtribüne mit Publikum
+  if (HILL.smallNeighbor) buildSmallHill(g);    // Garmisch: ungenutzte Nachbarschanze
+  if (HILL.village) buildVillage(g);            // Bischofshofen: Dorf hinter der Arena
+  return g;
+}
+function disposeVenue(g) {
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+  });
+}
+function applyHill(h) {
+  HILL = h;
+  GATE_X = h.gateX; EDGE_Y = h.edgeY;
+  K_POINT = h.K; HS_POINT = h.HS;
+  LIFT_C = h.liftC; DRAG_C = h.dragC;
+  // Atmosphäre: Tag oder Nachtspringen (z. B. Garmisch unter Flutlicht)
+  const night = !!h.night;
+  scene.background.set(night ? 0x070d18 : 0x9fd2f7);
+  scene.fog.color.set(night ? 0x0b1322 : 0xc3dcf2);
+  scene.fog.near = night ? 90 : 120;
+  scene.fog.far = night ? 800 : 980;
+  skyDome.material.map = night ? skyTexNight : skyTexDay;
+  skyDome.material.needsUpdate = true;
+  sunSprite.visible = !night;
+  sun.intensity = night ? 1.35 : 2.6;
+  sun.color.set(night ? 0xbdd3ff : 0xfff2dd);   // Mondlicht statt Sonne
+  hemi.intensity = night ? 0.4 : 0.9;
+  hemi.color.set(night ? 0x41547a : 0xd6ecff);
+  hemi.groundColor.set(night ? 0x0d1119 : 0x8fa3b8);
+  fill.intensity = night ? 0.25 : 0.45;
+  buildTrackTable();
+  if (venue) { scene.remove(venue); disposeVenue(venue); venue = null; }
+  venue = buildVenue();
+  scene.add(venue);
+}
+
+// ---- ambient snowfall ----
+const SNOW_N = 700;
+const snowPos = new Float32Array(SNOW_N * 3);
+for (let i = 0; i < SNOW_N; i++) {
+  snowPos[i * 3] = (Math.random() - 0.5) * 150;
+  snowPos[i * 3 + 1] = Math.random() * 70;
+  snowPos[i * 3 + 2] = (Math.random() - 0.5) * 90;
+}
+const snowGeo = new THREE.BufferGeometry();
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.55, transparent: true, opacity: 0.8, sizeAttenuation: true }));
+snow.frustumCulled = false;
+scene.add(snow);
+
+// ---- first person skis ----
+const skiGroup = new THREE.Group();
+camera.add(skiGroup);
+scene.add(camera);
+(function buildSkis() {
+  const skiMat = new THREE.MeshStandardMaterial({ color: 0x27354a, roughness: 0.35 });
+  // Ski-Umriss als 2D-Shape mit runder Spitze, senkrecht extrudiert
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.065, -1.2);
+  shape.lineTo(-0.065, 1.2);
+  shape.quadraticCurveTo(-0.065, 1.7, 0, 1.7);
+  shape.quadraticCurveTo(0.065, 1.7, 0.065, 1.2);
+  shape.lineTo(0.065, -1.2);
+  shape.closePath();
+  const skiGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.045, bevelEnabled: false });
+  for (const side of [-1, 1]) {
+    const ski = new THREE.Mesh(skiGeo, skiMat);
+    ski.rotation.x = -Math.PI / 2;
+    // Fixe Körper-Perspektive: Ski dauerhaft auf Fußhöhe vor der Kamera —
+    // in jeder Phase sichtbar; lateral fluchten sie mit den Rillen (±0,24 m).
+    ski.position.set(side * 0.24, -0.85, -1.15);
+    skiGroup.add(ski);
+  }
+})();
+
+// ============================================================
+//  AUDIO (lazy, fails silently)
+// ============================================================
+const AudioFX = (() => {
+  let ctx = null, windGain = null, noiseBuf = null;
+  function init() {
+    if (ctx) return;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuf; src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 700;
+      windGain = ctx.createGain();
+      windGain.gain.value = 0;
+      src.connect(lp).connect(windGain).connect(ctx.destination);
+      src.start();
+    } catch (e) { ctx = null; }
+  }
+  function beep(freq, dur, gain, type) {
+    if (!ctx) return;
+    try {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(gain, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + dur);
+    } catch (e) { }
+  }
+  function noiseBurst(dur, gain, freq) {
+    if (!ctx || !noiseBuf) return;
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuf;
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = freq || 500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start();
+      src.stop(ctx.currentTime + dur);
+    } catch (e) { }
+  }
+  return {
+    init,
+    wind(level) { if (windGain) windGain.gain.setTargetAtTime(clamp(level, 0, 1) * 0.45, ctx.currentTime, 0.2); },
+    tick() { beep(760, 0.06, 0.12, 'square'); },
+    perfectTick() { beep(1250, 0.09, 0.16, 'square'); },
+    jump() { noiseBurst(0.35, 0.3, 1600); beep(520, 0.15, 0.1); },
+    land() { beep(85, 0.28, 0.35); noiseBurst(0.25, 0.22, 400); },
+    telemark() { beep(660, 0.12, 0.15); setTimeout(() => beep(880, 0.2, 0.15), 110); },
+    crash() { noiseBurst(0.7, 0.5, 900); beep(60, 0.6, 0.4); },
+    fanfare() {
+      beep(523, 0.30, 0.16, 'square');
+      setTimeout(() => beep(659, 0.30, 0.16, 'square'), 320);
+      setTimeout(() => beep(784, 0.30, 0.16, 'square'), 640);
+      setTimeout(() => beep(1047, 0.85, 0.18, 'square'), 960);
+      setTimeout(() => beep(784, 0.5, 0.12, 'sine'), 1000);
+    }
+  };
+})();
+
+// ============================================================
+//  GAME STATE
+// ============================================================
+const S = {
+  mode: 'ready',           // ready | run | flight | landed | crashed | result
+  x: GATE_X, y: GATE_Y, z: 0,
+  v: 0,                    // run speed (m/s)
+  vx: 0, vy: 0, vz: 0,     // flight velocity
+  pitch: 0, roll: 0,       // flight attitude (rad)
+  pitchVel: 0, rollVel: 0,
+  jumpX: null,             // x where SPACE was pressed during run
+  q: 0,                    // jump quality 0..1
+  t: 0,                    // generic timer
+  flightT: 0,
+  errSum: 0, errN: 0, maxRoll: 0, maxImpact: 0,
+  lastSpaceT: -99, tumbled: false,
+  windBase: 0, gust: 0, walk: 0,
+  slideV: 0, resultShown: false,
+  resultT: 0, resultDriftZ: 0,
+  startedAt: 0,
+};
+
+let bests = {};
+try {
+  bests = JSON.parse(localStorage.getItem('skyflight-best-v3') || '{}') || {};
+} catch (e) { bests = {}; }
+
+const keys = {};
+let lastBeepX = -999, enteredPerfect = false, startCooldown = 0;
+
+// ---- DOM refs ----
+const el = id => document.getElementById(id);
+const dom = {
+  speedPanel: el('speedPanel'), windPanel: el('windPanel'),
+  speed: el('speed'), flightInfo: el('flightInfo'), windArrow: el('windArrow'), windSpeed: el('windSpeed'),
+  liveDist: el('liveDist'), liveDistVal: el('liveDistVal'), hint: el('hint'),
+  timing: el('timing'), timingZone: el('timingZone'), timingMarker: el('timingMarker'),
+  attitude: el('attitude'), horizon: el('horizon'), attText: el('attText'), cross: el('cross'),
+  flash: el('flash'), vignette: el('vignette'),
+  start: el('startOverlay'), result: el('resultOverlay'),
+  resDist: el('resDist'), resVerdict: el('resVerdict'), resJump: el('resJump'),
+  resStyle: el('resStyle'), resLanding: el('resLanding'), resPoints: el('resPoints'),
+  resTotal: el('resTotal'), resBest: el('resBest'), resBestLabel: el('resBestLabel'), resNext: el('resNext'),
+  comp: el('compOverlay'), compName: el('compNameInput'), compPlayers: el('compPlayerList'),
+  compError: el('compError'), podium: el('podiumOverlay'), podiumCard: el('podiumCard'),
+  compStandings: el('compStandings'), compStandingsTable: el('compStandingsTable'),
+  next: el('nextOverlay'), nextRound: el('nextRound'), nextName: el('nextName'),
+  nextJump: el('nextJump'), nextInfo: el('nextInfo'), nextStandings: el('nextStandings'),
+  podiumNext: el('podiumNext'),
+  trailer: el('trailerOverlay'), trStation: el('trStation'), trName: el('trName'),
+  trDesc: el('trDesc'), trWinners: el('trWinners'), trStandLabel: el('trStandLabel'),
+  trStandings: el('trStandings'), trStandingsBox: el('trStandingsBox'),
+};
+// bar maps x = -45..+3 to 0..100 %; perfect zone = last 6.5 m before the edge
+dom.timingZone.style.left = `${((-6.5 + 45) / 48 * 100)}%`;
+dom.timingZone.style.width = `${(6.5 / 48 * 100)}%`;
+function updateWindHUD() {
+  const w = S.windBase + S.gust;
+  dom.windSpeed.textContent = Math.abs(w).toFixed(1) + ' m/s';
+  dom.windArrow.textContent = Math.abs(w) < 0.25 ? '·' : (w > 0 ? '→' : '←');
+}
+
+function crossWindOffset(x) {
+  const t = x - 15;
+  return Math.min(1, Math.max(0, t / 15));
+}
+function crossWind() { return (S.windBase + S.gust) * crossWindOffset(S.x + 5); }
+
+function reset(toMode) {
+  S.mode = toMode || 'ready';
+  S.x = GATE_X; S.y = GATE_Y; S.z = 0;
+  S.v = 1.2; S.vx = 0; S.vy = 0; S.vz = 0;
+  S.pitch = 0; S.roll = 0; S.pitchVel = 0; S.rollVel = 0;
+  S.jumpX = null; S.q = 0; S.flightT = 0;
+  S.landDist = null;
+  S.errSum = 0; S.errN = 0; S.maxRoll = 0; S.maxImpact = 0;
+  S.lastSpaceT = -99; S.tumbled = false; S.resultShown = false;
+  S.resultT = 0; S.resultDriftZ = 0;
+  S.walk = 0;
+  S.windBase = (Math.random() * 2 - 1) * 2.6;
+  S.gust = 0;
+  lastBeepX = -999; enteredPerfect = false;
+  dom.vignette.style.boxShadow = 'inset 0 0 180px 60px rgba(120, 10, 10, 0)';
+  dom.timing.style.display = 'none';
+  dom.attitude.style.display = 'none';
+  dom.cross.style.display = 'none';
+  dom.liveDist.style.display = 'none';
+  dom.result.style.display = 'none';
+  updateWindHUD();
+}
+
+function flash(text, color) {
+  const div = document.createElement('div');
+  div.className = 'flashMsg';
+  div.style.color = color || '#fff';
+  div.textContent = text;
+  dom.flash.appendChild(div);
+  setTimeout(() => div.remove(), 1950);
+}
+
+// timing quality: 1 if pressed just before the edge, decaying further back
+function jumpQuality(x) {
+  const back = windowFrom - x;     // how far before the perfect window, in m
+  return clamp(1 - back / 28, 0, 1);
+}
+const TIMING_WINDOW = 6.5;   // last 6.5 m before the edge
+const windowFrom = -TIMING_WINDOW;
+
+// ============================================================
+//  HAUPTMENÜ — Ebene 1: Modi | Ebene 2: Schanzenwahl
+// ============================================================
+const MENU_MODES = [
+  { id: 'training', title: 'TRAINING', desc: 'Einzelner Sprung — Absprung-Timing, Flug und Landung üben' },
+  { id: 'wettkampf', title: 'WETTKAMPF', desc: 'Springer gegeneinander — zwei Durchgänge, Punkte addiert, Siegerehrung' },
+  { id: 'tournee', title: 'VIER SCHANZEN-TOURNEE', desc: 'Oberstdorf · Garmisch · Innsbruck · Bischofshofen — 4 Wettkämpfe, Trailer und Gesamtsieger' },
+];
+let menuScene = 'modes';   // 'modes' | 'hills' | 'compNames' | 'compNext' | 'podium'
+let menuIndex = 0;
+let pendingMode = null;
+
+function menuItems() {
+  if (menuScene === 'modes') return MENU_MODES;
+  return HILLS.map(h => ({ id: h.id, title: h.name, desc: h.desc }));
+}
+function renderMenu() {
+  const box = el('menu');
+  box.innerHTML = '';
+  menuItems().forEach((m, i) => {
+    const div = document.createElement('div');
+    div.className = 'menuItem' + (i === menuIndex ? ' selected' : '');
+    div.innerHTML = `<div class="miTitle">${m.title}</div><div class="miDesc">${m.desc}</div>`;
+    div.onclick = () => { menuIndex = i; confirmMenu(); };
+    div.onmouseenter = () => { if (menuIndex !== i) { menuIndex = i; renderMenu(); } };
+    box.appendChild(div);
+  });
+  const note = el('menuNote');
+  if (note) note.innerHTML = menuScene === 'modes'
+    ? '&#8593; / &#8595; WÄHLEN &mdash; LEERTASTE BESTÄTIGT'
+    : '&#8593; / &#8595; SCHANZE WÄHLEN &mdash; LEERTASTE STARTET &mdash; ESC ZURÜCK';
+  const h2 = dom.start.querySelector('h2');
+  if (h2) h2.textContent = menuScene === 'modes'
+    ? 'SKISPRINGEN IN EGO-PERSPEKTIVE'
+    : 'SCHANZE WÄHLEN';
+}
+function selectMenu(dir) {
+  const old = menuIndex;
+  menuIndex = clamp(menuIndex + dir, 0, menuItems().length - 1);
+  if (menuIndex !== old) { AudioFX.tick(); renderMenu(); }
+}
+function confirmMenu() {
+  if (menuScene === 'modes') {
+    const mode = MENU_MODES[menuIndex];
+    if (mode.id !== 'training' && mode.id !== 'wettkampf' && mode.id !== 'tournee') return;
+    pendingMode = mode.id;
+    menuIndex = 0;
+    if (mode.id === 'tournee') { openCompSetup(); return; }   // Stationen stehen fest
+    menuScene = 'hills';
+    renderMenu();
+    return;
+  }
+  applyHill(HILLS[menuIndex]);   // Schanze aufbauen
+  if (pendingMode === 'wettkampf') openCompSetup();   // erst Springer anmelden
+  else startTrailer();   // Training — Intro mit Schanzen-Vorstellung
+}
+function backToModes() {
+  menuScene = 'modes';
+  menuIndex = Math.max(0, MENU_MODES.findIndex(m => m.id === pendingMode));
+  renderMenu();
+}
+function openMenu() {
+  dom.result.style.display = 'none';
+  dom.comp.style.display = 'none';
+  dom.podium.style.display = 'none';
+  dom.next.style.display = 'none';
+  dom.trailer.style.display = 'none';
+  dom.speedPanel.style.display = 'block';
+  dom.windPanel.style.display = 'block';
+  skiGroup.visible = true;   // falls aus dem Trailer abgebrochen wurde
+  dom.start.style.display = 'flex';
+  disposeCeremony();         // laufende 3D-Siegerehrung ggf. abbrechen
+  comp = null;             // laufenden Wettkampf ggf. abbrechen
+  tour = null;             // laufende Tournee ggf. abbrechen
+  updateCompStandings();
+  S.mode = 'ready';
+  menuScene = 'modes';
+  menuIndex = 0;
+  renderMenu();
+}
+
+// ============================================================
+//  WETTKAMPF — Anmeldung, zwei Durchgänge pro Springer, Siegerehrung
+// ============================================================
+let comp = null;
+let compPlayers = [];   // angemeldete Namen (bleiben für Folge-Wettkämpfe erhalten)
+
+function backToHills() {
+  dom.comp.style.display = 'none';
+  dom.start.style.display = 'flex';
+  if (pendingMode === 'tournee') {   // es gibt keine Schanzenwahl — zurück zur Modus-Auswahl
+    menuScene = 'modes';
+    menuIndex = Math.max(0, MENU_MODES.findIndex(m => m.id === pendingMode));
+  } else {
+    menuScene = 'hills';
+  }
+  renderMenu();
+}
+function renderCompList() {
+  const ol = dom.compPlayers;
+  ol.innerHTML = '';
+  if (!compPlayers.length) {
+    const li = document.createElement('li');
+    li.textContent = '— noch keine Springer —';
+    li.style.opacity = '0.5';
+    ol.appendChild(li);
+    return;
+  }
+  compPlayers.forEach((n, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${i + 1}. ${n.length > 18 ? n.slice(0, 18) + '…' : n}`;
+    ol.appendChild(li);
+  });
+}
+function setCompError(msg) { dom.compError.textContent = msg || ''; }
+function openCompSetup() {
+  dom.start.style.display = 'none';
+  dom.result.style.display = 'none';
+  dom.comp.style.display = 'flex';
+  menuScene = 'compNames';
+  S.mode = 'ready';
+  const h2 = dom.comp.querySelector('h2');
+  if (h2) h2.textContent = 'SPRINGER ANMELDEN — ' + (pendingMode === 'tournee' ? 'VIER SCHANZEN-TOURNEE' : HILL.name);
+  setCompError('');
+  renderCompList();
+  setTimeout(() => dom.compName.focus(), 50);
+}
+function addCompPlayer() {
+  const v = dom.compName.value.trim();
+  if (!v) return;
+  if (compPlayers.length >= 8) { setCompError('Maximal 8 Springer'); return; }
+  compPlayers.push(v);
+  dom.compName.value = '';
+  setCompError('');
+  renderCompList();
+  dom.compName.focus();
+  AudioFX.tick();
+}
+function removeCompPlayer() {
+  if (!compPlayers.length) return;
+  compPlayers.pop();
+  renderCompList();
+  AudioFX.tick();
+}
+function startCompetition() {
+  if (compPlayers.length < 2) { setCompError('Mindestens 2 Springer anmelden!'); return; }
+  dom.comp.style.display = 'none';
+  comp = {
+    players: compPlayers.slice(),
+    results: compPlayers.map(() => [null, null]),   // [Durchgang 1, Durchgang 2]
+    idx: 0, round: 0, active: true,
+  };
+  showNextJumper();
+}
+// „Wer ist dran" — Sprung startet erst nach Leertaste
+function showNextJumper() {
+  S.mode = 'ready';
+  menuScene = 'compNext';
+  dom.start.style.display = 'none';
+  dom.result.style.display = 'none';
+  dom.podium.style.display = 'none';
+  const p = comp.players[comp.idx];
+  dom.nextRound.textContent = `DURCHGANG ${comp.round + 1} VON 2`;
+  dom.nextName.textContent = p.toUpperCase();
+  dom.nextJump.textContent = `Sprung ${comp.round + 1}/2 — ${HILL.name}`;
+  const done = comp.results[comp.idx].filter(j => j).length;
+  dom.nextInfo.textContent = done
+    ? `Bisher ${fmt(comp.results[comp.idx].reduce((s, j) => s + (j ? j.total : 0), 0), 1)} Pkt in diesem Wettkampf`
+    : 'Erster Sprung — viel Erfolg!';
+  dom.nextStandings.innerHTML = compStandingsHtml();
+  updateCompStandings();
+  dom.next.style.display = 'flex';
+}
+function startCompJump() {
+  const p = comp.players[comp.idx];
+  reset('run');
+  S.startedAt = performance.now();
+  startCooldown = S.startedAt + 450;
+  flash(`DURCHGANG ${comp.round + 1} — ${p.toUpperCase()}`, '#7dffa0');
+  updateCompStandings();
+  AudioFX.tick();
+}
+function compTotals() {
+  return comp.players.map((name, i) => ({
+    name,
+    jumps: comp.results[i],
+    total: comp.results[i].reduce((s, j) => s + (j ? j.total : 0), 0),
+  }));
+}
+// sortierte Rangliste als Tabellen-HTML (HUD und „Wer ist dran"-Overlay)
+function compStandingsHtml() {
+  const rows = compTotals()
+    .map((p, i) => ({ ...p, idx: i }))
+    .sort((a, b) => b.total - a.total);
+  return rows.map((p, r) => {
+    const done = p.jumps.filter(j => j).length;
+    const cls = p.idx === comp.idx ? 'cur' : (done <= comp.round ? 'pending' : '');
+    return `<tr class="${cls}"><td>${r + 1}.</td><td>${escHtml(p.name)}</td><td>${fmt(p.total, 1)}</td></tr>`;
+  }).join('');
+}
+function updateCompStandings() {
+  if (!comp || !comp.active) { dom.compStandings.style.display = 'none'; return; }
+  dom.compStandings.style.display = 'block';
+  const label = dom.compStandings.querySelector('.label');
+  if (label) label.textContent = `Zwischenstand · Durchgang ${comp.round + 1}`;
+  dom.compStandingsTable.innerHTML = compStandingsHtml();
+}
+function advanceComp() {
+  comp.idx++;
+  if (comp.idx >= comp.players.length) {
+    comp.idx = 0;
+    comp.round++;
+    if (comp.round >= 2) {
+      const standings = compTotals().sort((a, b) => b.total - a.total);
+      startCeremony(standings, showPodium);   // erst 3D-Siegerehrung, dann Podest-Karte
+      return;
+    }
+  }
+  showNextJumper();
+}
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fillPodiumSteps(sortedRows) {
+  const meta = [
+    { place: 2, cls: 'silver', h: 96 },
+    { place: 1, cls: 'gold', h: 132 },
+    { place: 3, cls: 'bronze', h: 72 },
+  ];
+  const pod = dom.podiumCard.querySelector('.podium');
+  pod.innerHTML = '';
+  for (const m of meta) {
+    const col = document.createElement('div');
+    col.className = 'pcol';
+    const p = sortedRows[m.place - 1];
+    col.innerHTML = p
+      ? `<div class="pName">${escHtml(p.name)}</div>
+         <div class="pPts">${fmt(p.total, 1)} Pkt</div>
+         <div class="pBlock ${m.cls}" style="height:${m.h}px">${m.place}</div>`
+      : `<div class="pName" style="opacity:0.4">${m.place}. Platz</div>
+         <div class="pPts"></div>
+         <div class="pBlock dim" style="height:${m.h}px"></div>`;
+    pod.appendChild(col);
+  }
+}
+function showPodium() {
+  comp.active = false;
+  S.mode = 'ready';
+  menuScene = 'podium';
+  dom.result.style.display = 'none';
+  updateCompStandings();   // Panel ausblenden
+  const standings = compTotals().sort((a, b) => b.total - a.total);
+  const h2 = dom.podiumCard.querySelector('h2');
+  if (tour) {
+    // Station in die Gesamtwertung eintragen, Tagessieger vormerken
+    standings.forEach(p => {
+      const i = tour.players.indexOf(p.name);
+      tour.points[i] += p.total;
+      tour.stagePoints[i].push(p.total);
+    });
+    tour.dayWinners.push(standings[0].name);
+    if (h2) h2.textContent = `STATION ${tour.stage + 1}/4 — ${HILL.name} · TAGESSIEGER: ${standings[0].name.toUpperCase()}`;
+    dom.podiumNext.textContent = tour.stage >= TOUR_HILLS.length - 1
+      ? 'LEERTASTE — GESAMTWERTUNG · ESC — HAUPTMENÜ'
+      : `LEERTASTE — NÄCHSTE STATION: ${tourHill(tour.stage + 1).name}`;
+  } else {
+    if (h2) h2.textContent = HILL.name + ' — 2 DURCHGÄNGE';
+    dom.podiumNext.textContent = 'LEERTASTE — NEUER WETTKAMPF · ESC — HAUPTMENÜ';
+  }
+  fillPodiumSteps(standings);
+  const tbl = dom.podiumCard.querySelector('.compRanking');
+  tbl.className = 'statTable compRanking';
+  tbl.innerHTML = '';
+  const head = document.createElement('tr');
+  head.innerHTML = `<td class="label">Springer</td><td class="label">Sprung 1</td><td class="label">Sprung 2</td><td class="label">Punkte</td>`;
+  tbl.appendChild(head);
+  standings.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    const j0 = p.jumps[0], j1 = p.jumps[1];
+    tr.innerHTML = `<td>${i + 1}. ${escHtml(p.name)}</td>
+      <td>${j0 ? `${fmt(j0.dist, 1)} m · ${fmt(j0.total, 1)}${j0.crashed ? ' (Sturz)' : ''}` : '—'}</td>
+      <td>${j1 ? `${fmt(j1.dist, 1)} m · ${fmt(j1.total, 1)}${j1.crashed ? ' (Sturz)' : ''}` : '—'}</td>
+      <td>${fmt(p.total, 1)}</td>`;
+    tbl.appendChild(tr);
+  });
+  dom.podium.style.display = 'flex';
+}
+
+dom.comp.addEventListener('click', () => dom.compName.focus());
+// Texteingabe mit eigenem Tastatur-Handler (Leertaste/Spielername bleibt nutzbar)
+dom.compName.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Escape') { backToHills(); return; }
+  if (e.key === 'Enter') {
+    if (dom.compName.value.trim()) addCompPlayer();
+    else if (pendingMode === 'tournee') startTour();
+    else startCompetition();
+    return;
+  }
+  if (e.key === 'Backspace' && !dom.compName.value) removeCompPlayer();
+});
+
+// ============================================================
+//  VIER SCHANZEN-TOURNEE — Stationen, Trailer, Gesamtwertung
+// ============================================================
+const TOUR_HILLS = ['oberstdorf', 'garmisch', 'innsbruck', 'bischofshofen'];
+const TOUR_LABELS = ['Oberstdorf', 'Garmisch', 'Innsbruck', 'Bischofshofen'];
+let tour = null;
+
+function tourHill(i) { return HILLS.find(h => h.id === TOUR_HILLS[i]); }
+function startTour() {
+  if (compPlayers.length < 2) { setCompError('Mindestens 2 Springer anmelden!'); return; }
+  dom.comp.style.display = 'none';
+  tour = {
+    players: compPlayers.slice(),
+    stage: 0,
+    points: compPlayers.map(() => 0),
+    stagePoints: compPlayers.map(() => []),   // je Springer: Punkte je Station
+    dayWinners: [],
+  };
+  tourStartStage();
+}
+function tourStartStage() {
+  applyHill(tourHill(tour.stage));   // Schanze neu aufbauen
+  startTrailer();
+}
+function tourStandingsHtml() {
+  const rows = tour.players.map((name, i) => ({ name, total: tour.points[i] }))
+    .sort((a, b) => b.total - a.total);
+  return rows.map((p, r) => `<tr><td>${r + 1}.</td><td>${escHtml(p.name)}</td><td>${fmt(p.total, 1)}</td></tr>`).join('');
+}
+function startTrailer() {
+  comp = null;
+  S.mode = 'trailer';
+  menuScene = 'trailer';
+  S.t = 0;
+  dom.start.style.display = 'none';
+  dom.result.style.display = 'none';
+  dom.podium.style.display = 'none';
+  dom.next.style.display = 'none';
+  dom.speedPanel.style.display = 'none';
+  dom.windPanel.style.display = 'none';
+  dom.compStandings.style.display = 'none';
+  skiGroup.visible = false;   // Skis zuerst weg — reine Kamerafahrt
+  dom.trStation.textContent = tour
+    ? `STATION ${tour.stage + 1}/4 — VIER SCHANZEN-TOURNEE`
+    : 'TRAINING — SCHANZENVORSTELLUNG';
+  dom.trName.textContent = HILL.name;
+  dom.trDesc.textContent = HILL.desc;
+  if (tour) {
+    dom.trWinners.textContent = tour.dayWinners.length
+      ? 'Tagessieger: ' + tour.dayWinners.map((w, i) => `${TOUR_LABELS[i]} ${escHtml(w)}`).join(' · ')
+      : '';
+    dom.trWinners.style.display = tour.dayWinners.length ? 'block' : 'none';
+    dom.trStandLabel.textContent = tour.stage
+      ? `Gesamtstand nach Station ${tour.stage}`
+      : 'Gesamtstand vor Station 1';
+    dom.trStandings.innerHTML = tourStandingsHtml();
+    dom.trStandingsBox.style.display = 'block';
+  } else {
+    dom.trWinners.style.display = 'none';
+    dom.trStandingsBox.style.display = 'none';   // im Training gibt es keinen Gesamtstand
+  }
+  dom.trailer.style.display = 'flex';
+  AudioFX.init();
+}
+const TRAILER_DUR = 15;   // Sekunden Kamerafahrt
+function simTrailer(dt) {
+  S.t += dt;
+  const p = clamp(S.t / TRAILER_DUR, 0, 1);
+  if (p >= 1) { endTrailer(); return; }
+  const q = p * p * (3 - 2 * p);   // sanftes Starten/Abbremsen
+  // Bezier-Bogen: vom Anlaufturm über die Piste zur Auslaufarena
+  const P0 = new THREE.Vector3(-175, 105, 165), P1 = new THREE.Vector3(95, 95, 235), P2 = new THREE.Vector3(235, 22, -55);
+  const pos = new THREE.Vector3()
+    .addScaledVector(P0, (1 - q) * (1 - q))
+    .addScaledVector(P1, 2 * (1 - q) * q)
+    .addScaledVector(P2, q * q);
+  camera.position.copy(pos);
+  camera.lookAt(new THREE.Vector3(-60 + 200 * q, 44 - 42 * q, 0));
+  AudioFX.wind(0.12);
+}
+function endTrailer(direct) {
+  if (S.mode !== 'trailer') return;
+  dom.trailer.style.display = 'none';
+  dom.speedPanel.style.display = 'block';
+  dom.windPanel.style.display = 'block';
+  skiGroup.visible = true;   // Ego-Perspektive zurück
+  if (tour) {
+    comp = {
+      players: tour.players.slice(),
+      results: tour.players.map(() => [null, null]),
+      idx: 0, round: 0, active: true,
+    };
+    if (direct) startCompJump();   // Überspringen: sofort los zum ersten Springer
+    else showNextJumper();
+    return;
+  }
+  // Training: Sprung starten
+  reset('run');
+  S.startedAt = performance.now();
+  startCooldown = S.startedAt + 450;
+  flash('LOS — ' + HILL.name + '!', '#7dffa0');
+  AudioFX.tick();
+}
+function tourNextStage() {
+  tour.stage++;
+  if (tour.stage >= TOUR_HILLS.length) {
+    const rows = tour.players.map((name, i) => ({ name, total: tour.points[i] }))
+      .sort((a, b) => b.total - a.total);
+    startCeremony(rows, showTourFinal);   // Gesamtsieger-Ehrung, dann Gesamtwertung
+    return;
+  }
+  tourStartStage();
+}
+function showTourFinal() {
+  comp = null;
+  S.mode = 'ready';
+  menuScene = 'tourFinal';
+  dom.result.style.display = 'none';
+  const rows = tour.players.map((name, i) => ({ name, total: tour.points[i], stages: tour.stagePoints[i] }))
+    .sort((a, b) => b.total - a.total);
+  const h2 = dom.podiumCard.querySelector('h2');
+  if (h2) h2.textContent = 'VIER SCHANZEN-TOURNEE — GESAMTWERTUNG';
+  dom.podiumNext.textContent = 'LEERTASTE — NEUE TOURNEE · ESC — HAUPTMENÜ';
+  fillPodiumSteps(rows);
+  const tbl = dom.podiumCard.querySelector('.compRanking');
+  tbl.className = 'statTable compRanking tourTable';
+  tbl.innerHTML = '';
+  const head = document.createElement('tr');
+  head.innerHTML = `<td class="label">Springer</td><td class="label">OS</td><td class="label">GAP</td><td class="label">INN</td><td class="label">BIS</td><td class="label">Punkte</td>`;
+  tbl.appendChild(head);
+  rows.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}. ${escHtml(p.name)}</td>`
+      + p.stages.map(v => `<td>${fmt(v, 1)}</td>`).join('')
+      + `<td>${fmt(p.total, 1)}</td>`;
+    tbl.appendChild(tr);
+  });
+  dom.podium.style.display = 'flex';
+}
+
+// ============================================================
+//  SIEGEREHRUNG IM KREIS — 3D-Podest in der Arena, Kamera-Orbit
+// ============================================================
+let ceremony = null;   // { group, after }
+const CEREMONY_DUR = 14;   // Sekunden
+
+function ceremonySprite(text, accent) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 112;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(8, 18, 32, 0.78)';
+  ctx.fillRect(6, 6, 500, 100);
+  ctx.strokeStyle = accent; ctx.lineWidth = 6;
+  ctx.strokeRect(6, 6, 500, 100);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${text.length > 14 ? 40 : 54}px system-ui, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 58);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
+  sp.scale.set(6.4, 1.4, 1);
+  return sp;
+}
+function buildCeremony(rows) {
+  const g = new THREE.Group();
+  const baseY = surfaceY(ARENA_X, 0) + 0.06;
+  const spots = [
+    { place: 1, z: 0,    h: 1.50, col: 0xffd166, edge: '#ffd166', suit: 0xe03131 },
+    { place: 2, z: -2.5, h: 1.10, col: 0xc0cbd6, edge: '#c0cbd6', suit: 0x1c7ed6 },
+    { place: 3, z: 2.5,  h: 0.75, col: 0xcd8f52, edge: '#cd8f52', suit: 0x2f9e44 },
+  ];
+  const bodyGeo = new THREE.CylinderGeometry(0.22, 0.30, 1.35, 7);
+  const headGeo = new THREE.SphereGeometry(0.16, 8, 6);
+  spots.forEach((sp, i) => {
+    const p = rows[i];
+    // Podestblock auch ohne dritten Springer, Figur nur bei Platzierung
+    const block = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, sp.h, 2.2),
+      new THREE.MeshStandardMaterial({ color: sp.col, roughness: 0.45, metalness: 0.15 })
+    );
+    block.position.set(ARENA_X, baseY + sp.h / 2, sp.z);
+    block.castShadow = true;
+    block.receiveShadow = true;
+    g.add(block);
+    if (!p) return;
+    const body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color: sp.suit, roughness: 0.8 }));
+    body.position.set(ARENA_X, baseY + sp.h + 1.35 / 2, sp.z);
+    body.castShadow = true;
+    g.add(body);
+    const head = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({ color: 0xe8c39e, roughness: 0.8 }));
+    head.position.set(ARENA_X, baseY + sp.h + 1.35 + 0.19, sp.z);
+    head.castShadow = true;
+    g.add(head);
+    const label = ceremonySprite(`${sp.place}. ${p.name}`, sp.edge);
+    label.position.set(ARENA_X, baseY + sp.h + 2.55, sp.z);
+    g.add(label);
+  });
+  return g;
+}
+function startCeremony(rows, after) {
+  S.mode = 'ceremony';
+  menuScene = 'ceremony';
+  S.t = 0;
+  dom.result.style.display = 'none';
+  dom.podium.style.display = 'none';
+  dom.next.style.display = 'none';
+  dom.speedPanel.style.display = 'none';
+  dom.windPanel.style.display = 'none';
+  dom.compStandings.style.display = 'none';
+  skiGroup.visible = false;   // Kamerafahrt, keine Ego-Skis
+  ceremony = { group: buildCeremony(rows), after };
+  scene.add(ceremony.group);
+  flash('SIEGEREHRUNG', '#ffd166');
+  AudioFX.fanfare();
+}
+function disposeCeremony() {
+  if (!ceremony) return;
+  scene.remove(ceremony.group);
+  ceremony.group.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+  });
+  ceremony = null;
+}
+function endCeremony() {
+  if (S.mode !== 'ceremony' || !ceremony) return;
+  const after = ceremony.after;
+  disposeCeremony();
+  dom.speedPanel.style.display = 'block';
+  dom.windPanel.style.display = 'block';
+  skiGroup.visible = true;
+  after();   // Podest-Karte bzw. Gesamtwertung zeigen
+}
+function simCeremony(dt) {
+  S.t += dt;
+  const p = S.t / CEREMONY_DUR;
+  if (p >= 1) { endCeremony(); return; }
+  const cy = surfaceY(ARENA_X, 0);
+  const ang = -0.9 + p * 2.6;           // ~150°-Sweep um das Podest
+  const r = 11.5 - 1.6 * p;             // langsam näher heran
+  camera.position.set(ARENA_X + Math.cos(ang) * r, cy + 3.1 + Math.sin(S.t * 0.9) * 0.22, Math.sin(ang) * r);
+  camera.lookAt(ARENA_X, cy + 1.9, 0);
+  AudioFX.wind(0.05);
+}
+
+// ============================================================
+//  INPUT
+// ============================================================
+addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  if (e.target && e.target.tagName === 'INPUT') return;   // Texteingabe: eigener Handler
+  if (e.repeat) return;
+  keys[e.code] = true;
+  AudioFX.init();
+
+  if (e.code === 'KeyR') {
+    if (comp && comp.active) return;   // Wettkampf: kein Neustart, der Sprung zählt
+    if (S.mode === 'trailer' || S.mode === 'ceremony') return;
+    if (S.mode !== 'ready') { reset('run'); startCooldown = performance.now() + 500; }
+    return;
+  }
+
+  // ESC — zurück ins Hauptmenü (bzw. aus der Schanzenwahl zur Modus-Auswahl)
+  if (e.code === 'Escape') {
+    if (S.mode === 'ready') {
+      if (menuScene === 'hills') backToModes();
+      else if (menuScene === 'compNames') backToHills();
+      else if (menuScene === 'compNext') openMenu();
+      else if (menuScene === 'podium') openMenu();
+      else if (menuScene === 'tourFinal') openMenu();
+      return;
+    }
+    if (S.mode === 'trailer') { openMenu(); return; }   // Tournee abbrechen
+    openMenu();   // im Lauf, im Flug und nach dem Sprung: Abbruch zurück zum Menü
+    return;
+  }
+
+  if (S.mode === 'trailer') {
+    if (e.code === 'Space' || e.code === 'Enter') endTrailer(true);   // Trailer überspringen, direkt zum ersten Springer
+    return;
+  }
+
+  if (S.mode === 'ceremony') {
+    if (e.code === 'Space' || e.code === 'Enter') endCeremony();   // Siegerehrung überspringen
+    return;
+  }
+
+  if (S.mode === 'ready') {
+    if (menuScene === 'compNames') return;   // Nameseingabe: nur der Input-Handler wirkt
+    if (menuScene === 'compNext') {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        dom.next.style.display = 'none';
+        startCompJump();
+      }
+      return;
+    }
+    if (menuScene === 'podium') {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        dom.podium.style.display = 'none';
+        if (tour) tourNextStage();
+        else startCompetition();   // gleiche Springer, gleiche Schanze, neue Runde
+      }
+      return;
+    }
+    if (menuScene === 'tourFinal') {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        dom.podium.style.display = 'none';
+        startTour();   // gleiche Springer, neue Tournee
+      }
+      return;
+    }
+    if (e.code === 'ArrowDown') { selectMenu(1); return; }
+    if (e.code === 'ArrowUp') { selectMenu(-1); return; }
+    if (e.code === 'Space' || e.code === 'Enter') { confirmMenu(); return; }
+    return;
+  }
+  if (e.code !== 'Space') return;
+  if (S.mode === 'run') {
+    if (performance.now() < startCooldown) return;
+    if (S.jumpX === null) S.jumpX = S.x;
+  } else if (S.mode === 'flight') {
+    S.lastSpaceT = S.flightT;   // Telemark-Vorbereitung
+  } else if (S.mode === 'result' || S.mode === 'landed') {
+    if (!S.resultShown && S.mode === 'landed') {
+      // Ausrollfahrt in die Arena überspringen
+      S.x = ARENA_X - 7;
+      S.slideV = 0;
+      S.y = surfaceY(S.x, S.z) + 0.9;
+      return;
+    }
+    if (!S.resultShown) return;
+    if (comp && comp.active) { advanceComp(); return; }   // Wettkampf: nächster Springer bzw. Podest
+    startTrailer();   // Training: Intro vor dem nächsten Sprung
+  }
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ============================================================
+//  SIMULATION
+// ============================================================
+function simRun(dt) {
+  const th = -trackAngle(S.x);
+  S.v += G * (Math.sin(th) - RUN_MU * Math.cos(th)) * dt;
+  S.x += S.v * Math.cos(th) * dt;
+
+  // Timing-Leiste ausgeblendet — Anfahr-Ticks und SPRUNG!-Hinweis bleiben
+  if (S.x > -45) {
+    const every = 6;
+    if (Math.floor(S.x / every) !== Math.floor(lastBeepX / every)) {
+      if (S.x < windowFrom) AudioFX.tick();
+    }
+    lastBeepX = S.x;
+    if (!enteredPerfect && S.x >= windowFrom) {
+      enteredPerfect = true;
+      AudioFX.perfectTick();
+      flash('SPRING!', '#ffd166');
+    }
+  }
+
+  AudioFX.wind(S.v / 34);
+
+  if (S.x >= 0) {
+    // take-off!
+    S.q = S.jumpX === null ? 0 : jumpQuality(S.jumpX);
+    const thEdge = -trackAngle(0);
+    S.vx = S.v * Math.cos(thEdge) + 0.4 * S.q;
+    S.vy = -S.v * Math.sin(thEdge) + (1.0 + 1.9 * S.q);
+    S.vz = 0;
+    S.y = trackY(0) + EYE;            // eye height at the take-off edge
+    S.pitch = thEdge * 0.5 + 0.10;   // come off upright-ish, rotate forward
+    S.roll = 0;
+    S.mode = 'flight';
+    S.flightT = 0;
+    dom.timing.style.display = 'none';
+    dom.attitude.style.display = 'block';
+    dom.cross.style.display = 'block';
+    dom.liveDist.style.display = 'block';
+    AudioFX.jump();
+    if (S.q > 0.9) flash('PERFEKTER ABSPRUNG', '#7dffa0');
+    else if (S.q > 0.45) flash('ZU FRÜH ABGESPRUNGEN', '#ffd166');
+    else if (S.q > 0.05) flash('WEIT ZU FRÜH!', '#ff6b6b');
+    else flash('KEIN ABSPRUNG!', '#ff6b6b');
+  }
+}
+
+function simFlight(dt) {
+  const SUB = 2, h = dt / SUB;
+  for (let i = 0; i < SUB; i++) {
+    S.flightT += h;
+    // gusts & wind
+    S.walk += (Math.random() - 0.5) * 1.6 * h;
+    S.walk *= Math.exp(-0.7 * h);
+    S.gust = Math.sin(S.flightT * 1.35 + S.windBase) * 0.8 + Math.sin(S.flightT * 3.1) * 0.5 + S.walk;
+    const w = crossWind();
+
+    // pitch control
+    let pIn = 0;
+    if (keys['ArrowUp']) pIn += 1;      // lean forward (nose down)
+    if (keys['ArrowDown']) pIn -= 1;    // lean back (nose up)
+    S.pitchVel += pIn * 1.7 * h;
+    S.pitchVel += w * 0.045 * h + (Math.random() - 0.5) * 0.10 * h;
+    S.pitchVel *= Math.exp(-2.4 * h);
+    S.pitch += S.pitchVel * h;
+
+    // roll control
+    let rIn = 0;
+    if (keys['ArrowRight']) rIn += 1;
+    if (keys['ArrowLeft']) rIn -= 1;
+    S.rollVel += rIn * 2.6 * h;
+    S.rollVel += w * 0.11 * h + (Math.random() - 0.5) * 0.22 * h;
+    S.rollVel *= Math.exp(-2.2 * h);
+    S.roll = clamp(S.roll + S.rollVel * h, -1.25, 1.25);
+    if (Math.abs(S.roll) > 1.0) S.tumbled = true;
+
+    // lateral
+    S.vz += (Math.sin(S.roll) * G * 0.5 + w * 0.3) * h;
+    S.z += S.vz * h;
+
+    // aerodynamics
+    const err = (S.pitch - OPT_PITCH) / OPT_PITCH;
+    S.errSum += Math.abs(err); S.errN++;
+    S.maxRoll = Math.max(S.maxRoll, Math.abs(S.roll));
+    const sp2 = S.vx * S.vx + S.vy * S.vy;
+    const sp = Math.sqrt(sp2);
+    const lift = LIFT_C * S.vx * S.vx * Math.max(0, 1 - 1.1 * err * err);
+    const drag = DRAG_C * (1 + 1.5 * err * err) * sp2;
+    S.vy += (-G + lift) * h;
+    let nvx = S.vx - drag * (S.vx / sp) * h;
+    if (nvx < 0) nvx = 0;
+    S.vx = nvx;
+    S.x += S.vx * h;
+    S.y += S.vy * h;
+
+    // contact?
+    const gy = surfaceY(S.x, S.z);
+    if (S.y - 0.9 <= gy) {
+      S.y = gy + 0.9;
+      resolveLanding(gy);
+      return;
+    }
+  }
+
+  const gy2 = surfaceY(S.x, S.z);
+  dom.flightInfo.textContent = `Höhe über der Piste: ${Math.max(0, S.y - gy2).toFixed(0)} m · ${Math.round(S.vx * 3.6)} km/h`;
+  dom.liveDistVal.textContent = `${Math.max(0, S.x).toFixed(0)} m`;
+  AudioFX.wind(S.vx / 34);
+}
+
+function resolveLanding(gy) {
+  const s = S.x > 0 ? hillSlope(S.x) : 0;
+  const impact = S.vy - S.vx * s;
+  S.maxImpact = Math.abs(impact);
+  const dist = Math.max(0, S.x);
+  S.landDist = dist;   // Weite wird am Landepunkt gemessen (wie im Skispringen üblich)
+  const telemark = (S.flightT - S.lastSpaceT) < 0.35 && Math.abs(S.roll) < 0.18;
+  const offPiste = Math.abs(S.z) > 20;
+
+  const crashed = S.tumbled || offPiste || S.maxImpact > 18 || dist < 20;
+  const rough = S.maxImpact > 15 || Math.abs(S.roll) > 0.3;
+
+  if (crashed) {
+    S.mode = 'crashed';
+    S.slideV = Math.min(S.vx, 14);
+    dom.vignette.style.boxShadow = 'inset 0 0 180px 80px rgba(160, 10, 10, 0.85)';
+    AudioFX.crash();
+    showCrash(offPiste, telemark);
+  } else {
+    S.mode = 'landed';
+    S.slideV = S.vx;
+    S.t = 0;
+    AudioFX.land();
+    if (telemark && !rough) {
+      AudioFX.telemark();
+      flash('TELEMARK!', '#ffd166');
+    } else if (rough) {
+      flash('HARTE LANDUNG', '#ffb54d');
+    } else {
+      flash('GUTE LANDUNG', '#7dffa0');
+    }
+    S.telemark = telemark;
+    S.rough = rough;
+  }
+  dom.attitude.style.display = 'none';
+  dom.cross.style.display = 'none';
+  dom.flightInfo.textContent = '';
+}
+
+function simSlide(dt) {
+  const nearArena = S.x >= ARENA_X - 7;
+  if (S.mode === 'landed') {
+    // nach der Landung in die Mitte des Auslaufkreises rollen
+    // (auch bei früher Landung), Tempo passt sich der Entfernung an
+    const dToArena = (ARENA_X - 7) - S.x;
+    S.slideV = nearArena ? Math.max(0, S.slideV - 7.5 * dt)
+      : Math.max(S.slideV - 7.5 * dt, 10 + Math.min(dToArena / 14, 7));
+    S.x += S.slideV * dt;
+    S.y = surfaceY(S.x, S.z) + 0.9;
+    S.roll *= Math.exp(-3 * dt);
+    S.pitch *= Math.exp(-3 * dt);
+    if (!S.resultShown && nearArena && S.slideV < 0.6) {
+      S.resultShown = true;
+      showResult(false);   // startet die langsame Kamerafahrt
+    }
+  } else {
+    // crash tumble
+    S.slideV = Math.max(0, S.slideV - 7.5 * dt);
+    S.x += S.slideV * dt;
+    S.y = surfaceY(S.x, S.z) + 0.9;
+    S.t += dt;
+    S.pitch -= 5.5 * dt;
+    S.roll += 4 * dt;
+    if (!S.resultShown && S.slideV < 6) { S.resultShown = true; showResult(true); }
+  }
+  AudioFX.wind(S.slideV / 34);
+}
+
+// ============================================================
+//  RESULTS
+// ============================================================
+function stylePoints() {
+  const avgErr = S.errN ? (S.errSum / S.errN) : 1;
+  let st = 20;
+  st -= (1 - S.q) * 3.5;                                    // take-off timing
+  st -= Math.min(6, avgErr * 6);                            // flight attitude
+  st -= Math.min(4, (S.maxRoll / 0.35) * 4);                // wobble
+  if (S.mode === 'landed') {
+    st -= Math.min(3, (S.maxImpact / 15) * 3);              // impact hardness
+    if (S.telemark && !S.rough) st += 1.2;
+    if (S.rough) st -= 1.5;
+  } else {
+    st = 0;
+  }
+  return clamp(st, 0, 20);
+}
+
+function fmt(n, d) { return n.toFixed(d); }
+
+function showResult(crashed) {
+  S.resultT = 0;
+  S.resultDriftZ = S.z;
+  const dist = S.landDist != null ? S.landDist : Math.max(0, S.x);
+  const dTxt = crashed ? fmt(Math.min(dist, dist), 1) : fmt(dist, 1);
+  dom.resDist.innerHTML = `${dTxt} <span>m</span>`;
+
+  let verdict, color;
+  if (crashed) { verdict = 'STURZ'; color = 'var(--bad)'; }
+  else if (dist > HILL.record) { verdict = 'SCHANZENREKORD GEBROCHEN!'; color = 'var(--good)'; }
+  else if (dist >= HS_POINT) { verdict = 'TOP-SPRUNG!'; color = 'var(--good)'; }
+  else if (dist >= K_POINT) { verdict = 'GROSSER SPRUNG'; color = 'var(--good)'; }
+  else if (dist >= K_POINT - 20) { verdict = 'SOLIDER SPRUNG'; color = 'var(--warn)'; }
+  else { verdict = 'KURZER SPRUNG'; color = 'var(--warn)'; }
+  dom.resVerdict.textContent = crashed ? `STURZ — ${crashReason()}` : verdict;
+  dom.resVerdict.style.color = crashed ? 'var(--bad)' : color;
+
+  const qPct = Math.round(S.q * 100);
+  dom.resJump.textContent = crashed ? '—' : `${qPct}%`;
+
+  const st = stylePoints();
+  dom.resStyle.textContent = crashed ? '—' : `${fmt(st, 1)} / 20`;
+  dom.resLanding.textContent = crashed ? 'GESTÜRZT' : (S.telemark && !S.rough ? 'Telemark' : S.rough ? 'Hart' : 'Sauber');
+
+  const distPts = Math.max(0, 60 + (dist - K_POINT) * 1.4) * (crashed ? 0.5 : 1);
+  const total = distPts + st;
+  dom.resPoints.textContent = `${fmt(distPts, 1)}`;
+  dom.resTotal.textContent = `${fmt(total, 1)} Pkt`;
+
+  if (comp && comp.active) {
+    // Wettkampf: Sprungergebnis festschreiben (Neustart-Taste ist gesperrt, Absicherung)
+    if (comp.results[comp.idx][comp.round] == null) {
+      comp.results[comp.idx][comp.round] = { dist, total, crashed };
+    }
+    updateCompStandings();
+    const soFar = comp.results[comp.idx].reduce((s, j) => s + (j ? j.total : 0), 0);
+    dom.resBestLabel.textContent = 'Wettkampf-Punkte';
+    dom.resBest.textContent = `${fmt(soFar, 1)} Pkt · ${comp.players[comp.idx]} · Sprung ${comp.round + 1}/2`;
+    const last = comp.round === 1 && comp.idx === comp.players.length - 1;
+    dom.resNext.textContent = `LEERTASTE — ${last ? 'SIEGEREHRUNG' : 'NÄCHSTER SPRINGER'} · ESC — HAUPTMENÜ`;
+  } else {
+    dom.resBestLabel.textContent = 'Persönliche Bestweite';
+    dom.resNext.textContent = 'LEERTASTE — NOCHMAL SPRINGEN · ESC — HAUPTMENÜ';
+    const hb = bests[HILL.id] || { dist: 0, points: 0 };
+    if (dist > hb.dist || total > hb.points) {
+      hb.dist = Math.max(hb.dist, dist);
+      hb.points = Math.max(hb.points, total);
+      bests[HILL.id] = hb;
+      try { localStorage.setItem('skyflight-best-v3', JSON.stringify(bests)); } catch (e) { }
+    }
+    dom.resBest.textContent = `${fmt(hb.dist, 1)} m · ${fmt(hb.points, 1)} Pkt · ${HILL.name}`;
+  }
+
+  // keep world visible but darkened card on top
+  dom.result.style.display = 'flex';
+  dom.result.style.background = 'rgba(4, 10, 20, 0.45)';
+  S.mode = crashed ? 'result' : 'result';
+  S.crashedLast = crashed;
+}
+
+function showCrash(offPiste) {
+  flash('STURZ!', '#ff6b6b');
+}
+function crashReason() {
+  if (Math.abs(S.z) > 20) return 'von der Piste abgekommen';
+  if (S.tumbled) return 'Kontrolle verloren';
+  return 'zu harter Aufprall';
+}
+
+// ============================================================
+//  CAMERA & RENDER LOOP
+// ============================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  if (S.mode === 'ready') {
+    S.x = GATE_X; S.y = GATE_Y; S.z = 0;
+    camera.position.set(S.x, GATE_Y + EYE, 0);
+    camera.rotation.y = -Math.PI / 2;   // Blick entlang der Anfahrt (Kamerafahrt zurücksetzen)
+    camera.rotation.x = trackAngle(GATE_X) + 0.06;
+    camera.rotation.z = 0;
+    setHint('');
+  } else if (S.mode === 'run') {
+    simRun(dt);
+    if (S.mode === 'run') {
+      const th = -trackAngle(S.x);
+      camera.position.set(S.x, trackY(S.x) + EYE + Math.sin(t * 9) * 0.02, 0);
+      camera.rotation.y = -Math.PI / 2;
+      camera.rotation.x = trackAngle(S.x) + 0.05 + Math.sin(t * 2.2) * 0.004;
+      camera.rotation.z = Math.sin(t * 5.5) * 0.006;
+      setHint(S.jumpX === null ? 'TEMPO! Leertaste in der grünen Zone drücken' : 'Ruhe bewahren…');
+      dom.speed.textContent = Math.round(S.v * 3.6);
+      dom.flightInfo.textContent = '';
+      dom.liveDist.style.display = 'none';
+    }
+  } else if (S.mode === 'flight') {
+    const preX = S.x;
+    simFlight(dt);
+    updateWindHUD();
+    // camera follows attitude
+    const bobR = Math.sin(t * 3.1) * 0.015 * clamp(1 + S.rollVel, 0.2, 1.4);
+    camera.position.set(S.x, S.y, S.z);
+    camera.rotation.x = -S.pitch + 0.04;
+    camera.rotation.z = -S.roll + bobR;
+    dom.speed.textContent = Math.round(S.vx * 3.6);
+    const errDeg = Math.abs((S.pitch - OPT_PITCH)) / D2R;
+    const rollDeg = Math.abs(S.roll) / D2R;
+    dom.horizon.style.transform = `translateY(-50%) rotate(${(-S.roll / D2R).toFixed(1)}deg)`;
+    const bad = errDeg > 17 || rollDeg > 14;
+    dom.horizon.style.borderTopColor = bad ? 'var(--bad)' : (errDeg > 8 || rollDeg > 7 ? 'var(--warn)' : 'var(--good)');
+    dom.attText.textContent = errDeg > 17 ? (S.pitch < OPT_PITCH ? 'ZU FLACH — VORLEHNEN (↑)' : 'ZU STEIL — ZURÜCKLEHNEN (↓)')
+      : rollDeg > 14 ? 'INSTABIL'
+        : 'STABIL';
+    if (S.tumbled) dom.attText.textContent = 'KONTROLLE VERLOREN!';
+  } else if (S.mode === 'trailer') {
+    simTrailer(dt);
+    dom.speed.textContent = '0';
+    dom.flightInfo.textContent = '';
+  } else if (S.mode === 'ceremony') {
+    simCeremony(dt);
+  } else if (S.mode === 'landed' || S.mode === 'crashed') {
+    simSlide(dt);
+    camera.position.set(S.x, S.y, S.z);
+    camera.rotation.x = S.mode === 'crashed' ? S.pitch : Math.max(-0.6, Math.min(0.1, hillSlope(Math.max(S.x, 1)) * 0.8)) + 0.07;
+    camera.rotation.z = -S.roll;
+    dom.speed.textContent = Math.round(S.slideV * 3.6);
+    dom.liveDist.style.display = 'none';
+  } else if (S.mode === 'result') {
+    // langsame Kamerafahrt zur Seite mit Blick zurück zum Hang
+    S.resultT += dt;
+    const p = Math.min(1, S.resultT / 14);
+    const ease = 1 - Math.pow(1 - p, 2);            // sanftes Ausrollen der Fahrt
+    S.z = S.resultDriftZ + ease * 16;
+    S.y = surfaceY(S.x, S.z) + 0.9;
+    camera.position.set(S.x, S.y + ease * 1.0, S.z);
+    camera.rotation.y = -Math.PI / 2 + ease * 1.9;   // Blick schwenkt zur Schanze zurück
+    camera.rotation.x = 0.02;
+    camera.rotation.z = 0;
+    dom.speed.textContent = '0';
+    dom.flightInfo.textContent = '';
+    dom.liveDist.style.display = 'none';
+  }
+
+  // snow
+  const cx = camera.position.x, cy = camera.position.y;
+  const arr = snow.geometry.attributes.position.array;
+  for (let i = 0; i < SNOW_N; i++) {
+    arr[i * 3 + 1] -= (2.2 + (i % 5) * 0.5) * dt;
+    arr[i * 3] += (S.windBase + S.gust) * 0.4 * dt;
+    if (arr[i * 3 + 1] < -12) arr[i * 3 + 1] += 70;
+    if (arr[i * 3 + 1] > 58) arr[i * 3 + 1] -= 70;
+  }
+  snow.position.set(cx, cy, camera.position.z);
+
+  setHint(S.mode === 'flight' ? '↑↓ Anstellung · ←→ Stabilität' : '');
+  if (S.mode !== 'run') dom.flightInfo.textContent = S.mode === 'flight' ? dom.flightInfo.textContent : '';
+  if (S.mode === 'ready') { dom.speed.textContent = '0'; }
+
+  renderer.render(scene, camera);
+}
+
+function setHint(text) {
+  if (!text) { dom.hint.style.display = 'none'; return; }
+  dom.hint.style.display = 'block';
+  dom.hint.textContent = text;
+}
+
+applyHill(HILLS[0]);
+reset('ready');
+animate();       // Render-Loop zuerst starten — kein Folgefehler darf sie blockieren
+renderMenu();
+</script>
+</body>
+</html>
